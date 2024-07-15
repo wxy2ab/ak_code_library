@@ -1,0 +1,3 @@
+[submodule "akinterpreter"]
+	path = akinterpreter
+	url = git@github.com:wxy2ab/akinterpreter.git
