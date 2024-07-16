@@ -1,0 +1,40 @@
+{
+  "query_summary": "检索并深入分析中远海控的最新研报数据，聚焦于市场机会、竞争、前景展望及潜在风险",
+  "steps": [
+    {
+      "step_number": 1,
+      "description": "获取中远海控的最新研究报告数据",
+      "type": "data_retrieval",
+      "data_category": "公司数据",
+      "save_data_to": "cosco_research_reports",
+      "parameters": [
+        {
+          "key": "symbol",
+          "value": "'601919'"
+        }
+      ]
+    },
+    {
+      "step_number": 2,
+      "description": "获取中远海控的基本公司信息",
+      "type": "data_retrieval",
+      "data_category": "公司数据",
+      "save_data_to": "cosco_company_info",
+      "parameters": [
+        {
+          "key": "symbol",
+          "value": "601919"
+        }
+      ]
+    },
+    {
+      "step_number": 3,
+      "description": "深入分析中远海控的研报内容，重点关注：\n1. 市场机会\n2. 市场竞争\n3. 前景展望\n4. 潜在风险和机遇\n5. 其他值得关注的要点",
+      "type": "data_analysis",
+      "required_data": [
+        "cosco_research_reports",
+        "cosco_company_info"
+      ]
+    }
+  ]
+}

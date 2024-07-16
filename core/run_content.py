@@ -1,5 +1,6 @@
 import os
 import json
+import sys
 import time
 from datetime import datetime
 from core.llms.llm_factory import LLMFactory
@@ -76,7 +77,7 @@ def create_report_prompt(initial_query: str, results_summary: str) -> str:
     报告应结构清晰、表述明确，并提供有意义的结论。
     """
 
-def run_content(n):
+def run_content(n, cmd_args):
     with open('./json/agenda.json', 'r', encoding='utf-8') as agenda_file:
         agenda = json.load(agenda_file)
 
@@ -96,6 +97,19 @@ def run_content(n):
     for step in plan_data["steps"]:
         step_code_path = os.path.join(os.path.dirname(plan_path), f'step_code_{step["step_number"]}.py')
         step["step_code_path"] = step_code_path
+
+        # 处理参数
+        if "parameters" in step:
+            for param in step["parameters"]:
+                key = param["key"]
+                default_value = eval(param["value"])  # 解析默认值
+                if key in cmd_args:
+                    value = cmd_args[key]
+                else:
+                    value = default_value
+                global_vars[key] = value
+                print(f"Setting parameter {key} = {value}")
+
         execute_step(step, global_vars, saved_data, runner, analysis_results)
 
     llm_client = global_vars['llm_client']
@@ -107,10 +121,16 @@ def run_content(n):
     print(final_report)
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) != 2:
-        print("Usage: python run_content.py <n>")
+    if len(sys.argv) < 2:
+        print("Usage: python run_content.py <n> [param1=value1] [param2=value2] ...")
         sys.exit(1)
     
     n = int(sys.argv[1])
-    run_content(n)
+    
+    # 解析命令行参数
+    cmd_args = {}
+    for arg in sys.argv[2:]:
+        key, value = arg.split('=')
+        cmd_args[key] = value
+    
+    run_content(n, cmd_args)
