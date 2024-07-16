@@ -1,0 +1,28 @@
+{
+  "query_summary": "从财联社接口获取最新的新闻数据，总结内容，生成词云图",
+  "steps": [
+    {
+      "step_number": 1,
+      "description": "从财联社接口获取最新新闻数据",
+      "type": "data_retrieval",
+      "data_category": "新闻数据",
+      "save_data_to": "cailian_api_news"
+    },
+    {
+      "step_number": 2,
+      "description": "分析和总结获取的财联社新闻内容",
+      "type": "data_analysis",
+      "required_data": [
+        "cailian_api_news"
+      ]
+    },
+    {
+      "step_number": 3,
+      "description": "基于财联社新闻内容生成词云图",
+      "type": "data_analysis",
+      "required_data": [
+        "cailian_api_news"
+      ]
+    }
+  ]
+}
