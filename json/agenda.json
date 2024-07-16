@@ -3,8 +3,18 @@
         "key": "从财联社接口获取最新的新闻数据，总结内容，生成词云图",
         "number_of_steps": 3,
         "lines_of_code": 162,
-        "create_time": "2024-07-16T08:47:54.031982",
+        "create_time": "2024-07-16T16:46:35.385649",
         "path": "c6f95cfd-0abd-40f5-9544-2cb8aa673804/plan.json",
+        "params": "",
         "index": 1
+    },
+    {
+        "key": "检索并深入分析中远海控的最新研报数据，聚焦于市场机会、竞争、前景展望及潜在风险",
+        "number_of_steps": 3,
+        "lines_of_code": 59,
+        "create_time": "2024-07-16T18:40:50.500263",
+        "path": "5c6ed52f-13b7-42e6-8d6a-d1e6854c3102/plan.json",
+        "params": "symbol",
+        "index": 2
     }
 ]

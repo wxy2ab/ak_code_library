@@ -33,12 +33,19 @@ def build_table_of_contents():
                 create_time = datetime.fromtimestamp(get_file_creation_time(plan_file_path)).isoformat()
                 relative_path = os.path.relpath(plan_file_path, start=library_dir)
 
+                # 处理 parameters
+                all_params = set()
+                for step in plan_data.get("steps", []):
+                    if "parameters" in step:
+                        all_params.update(param["key"] for param in step["parameters"])
+
                 agenda_item = {
                     "key": query_summary,
                     "number_of_steps": number_of_steps,
                     "lines_of_code": lines_of_code,
                     "create_time": create_time,
-                    "path": relative_path
+                    "path": relative_path,
+                    "params": ",".join(sorted(all_params)) if all_params else ""
                 }
                 agenda.append(agenda_item)
     
