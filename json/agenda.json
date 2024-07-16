@@ -3,7 +3,7 @@
         "key": "从财联社接口获取最新的新闻数据，总结内容，生成词云图",
         "number_of_steps": 3,
         "lines_of_code": 162,
-        "create_time": "2024-07-16T00:53:54.772779",
+        "create_time": "2024-07-16T08:47:54.031982",
         "path": "c6f95cfd-0abd-40f5-9544-2cb8aa673804/plan.json",
         "index": 1
     }
