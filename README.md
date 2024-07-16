@@ -19,7 +19,7 @@ pip install -r requirements.txt
 ehco 修改setting.ini, 填写key
 cp setting.ini.template setting.ini
 index = 1
-python main.py $index
+python main.py $index parm1=value1 param2=value2
 ```
 
 ---
