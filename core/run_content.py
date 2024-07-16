@@ -73,6 +73,7 @@ def create_report_prompt(initial_query: str, results_summary: str) -> str:
     3. 提供整体的见解和结论
     4. 指出任何有趣或意外的发现
     5. 如果适用，提供进一步分析的建议
+    6. 图片和文件按 ![分析图表]({{file_name}}) 格式使用
 
     报告应结构清晰、表述明确，并提供有意义的结论。
     """
