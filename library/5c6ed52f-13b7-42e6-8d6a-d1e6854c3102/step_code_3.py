@@ -12,6 +12,16 @@ os.makedirs('output', exist_ok=True)
 research_reports = cosco_research_reports
 company_info = cosco_company_info
 
+if os.name == 'nt':
+    font_path = 'C:/Windows/Fonts/msyh.ttc'
+elif os.name == 'posix':
+    if os.path.exists('/System/Library/Fonts/PingFang.ttc'):
+        font_path = '/System/Library/Fonts/PingFang.ttc'
+    else:
+        font_path = '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc'
+else:
+    font_path = None
+plt.rcParams['font.sans-serif'] = [font_path,'Arial Unicode MS', 'Microsoft YaHei', 'SimHei', 'SimSun', 'sans-serif']
 # 分析研报评级
 ratings = research_reports['东财评级'].value_counts()
 plt.figure(figsize=(10, 6))
