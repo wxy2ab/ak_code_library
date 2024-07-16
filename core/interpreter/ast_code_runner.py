@@ -2,11 +2,55 @@ import ast
 import sys
 import io
 import os
-from typing import Any, Dict, Generator
+from typing import Any, Dict, Generator, Tuple
 
 class ASTCodeRunner:
     def __init__(self, debug=False):
         self.debug = debug
+        self.blacklisted_modules = set(['subprocess']) 
+
+
+    def run(self, code: str, global_vars: Dict[str, Any]) -> Dict[str, Any]:
+        # 准备捕获输出
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        redirected_output = io.StringIO()
+        redirected_error = io.StringIO()
+        sys.stdout = redirected_output
+        sys.stderr = redirected_error
+
+        result = {
+            "output": "",
+            "error": None,
+            "updated_vars": {},
+            "debug": None
+        }
+
+        try:
+            if self.debug:
+                result["debug"] = f"调试信息: 准备执行下面的代码:\n{code}"
+
+            # 准备执行环境
+            exec_globals = global_vars.copy()
+            
+            # 执行代码
+            exec(code, exec_globals)
+
+            # 捕获输出
+            result["output"] = redirected_output.getvalue()
+
+            # 返回更新后的变量
+            result["updated_vars"] = {k: v for k, v in exec_globals.items() if k not in global_vars or global_vars[k] is not v}
+
+        except Exception as e:
+            result["error"] = f"{type(e).__name__}: {str(e)}"
+            result["error"] += f"\n{redirected_error.getvalue()}"
+        finally:
+            # 恢复标准输出和错误流
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
+
+        return result
 
     def run_sse(self, code: str, global_vars: Dict[str, Any]) -> Generator[Dict[str, Any], None, None]:
         old_stdout = sys.stdout
