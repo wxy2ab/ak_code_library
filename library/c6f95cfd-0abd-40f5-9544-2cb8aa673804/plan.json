@@ -6,7 +6,13 @@
       "description": "从个股新闻接口获取最新新闻数据",
       "type": "data_retrieval",
       "data_category": "新闻数据",
-      "save_data_to": "cailian_api_news"
+      "save_data_to": "cailian_api_news",
+      "parameters": [
+        {
+          "key": "symbol",
+          "value": "300059"
+        }
+      ]
     },
     {
       "step_number": 2,

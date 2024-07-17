@@ -38,17 +38,21 @@ else:
 
 wordcloud = WordCloud(width=800, height=400, background_color='white', font_path=font_path, max_words=100).generate_from_frequencies(filtered_words)
 def configure_matplotlib_for_chinese():
-    # 设置字体文件路径（Linux）
-    font_path = '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc'
+    import platform
+    system = platform.system()
+    if system == 'Windows':
+        font_name = 'SimHei'
+    elif system == 'Darwin':
+        font_name = 'STHeiti'
+    else:  # For Linux
+        font_path = '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc'
+        if os.path.exists(font_path):
+            font_manager.fontManager.addfont(font_path)
+            font_name = font_manager.FontProperties(fname=font_path).get_name()
+        else:
+            raise FileNotFoundError(f"Font file not found: {font_path}")
     
-    # 检查字体文件是否存在并添加到字体管理器
-    if os.path.exists(font_path):
-        font_manager.fontManager.addfont(font_path)
-        font_name = font_manager.FontProperties(fname=font_path).get_name()
-    else:
-        raise FileNotFoundError(f"Font file not found: {font_path}")
-    
-    # 设置字体属性
+    # Set the font properties
     plt.rcParams['font.sans-serif'] = [font_name]
     plt.rcParams['font.family'] = 'sans-serif'
     plt.rcParams['axes.unicode_minus'] = False
