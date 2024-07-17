@@ -1,0 +1,1 @@
+streamlit run /home/wxy/code/ak_code_library/web.py

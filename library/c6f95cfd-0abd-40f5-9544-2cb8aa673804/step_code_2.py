@@ -1,3 +1,4 @@
+from matplotlib import font_manager
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -43,16 +44,27 @@ df['发布时间'] = pd.to_datetime(df['发布时间'])
 df['日期'] = df['发布时间'].dt.date
 
 news_count_by_date = df['日期'].value_counts().sort_index()
-if os.name == 'nt':
-    font_path = 'C:/Windows/Fonts/msyh.ttc'
-elif os.name == 'posix':
-    if os.path.exists('/System/Library/Fonts/PingFang.ttc'):
-        font_path = '/System/Library/Fonts/PingFang.ttc'
+
+def configure_matplotlib_for_chinese():
+    # 设置字体文件路径（Linux）
+    font_path = '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc'
+    
+    # 检查字体文件是否存在并添加到字体管理器
+    if os.path.exists(font_path):
+        font_manager.fontManager.addfont(font_path)
+        font_name = font_manager.FontProperties(fname=font_path).get_name()
     else:
-        font_path = '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc'
-else:
-    font_path = None
-plt.rcParams['font.sans-serif'] = [font_path,'Arial Unicode MS', 'Microsoft YaHei', 'SimHei', 'SimSun', 'sans-serif']
+        raise FileNotFoundError(f"Font file not found: {font_path}")
+    
+    # 设置字体属性
+    plt.rcParams['font.sans-serif'] = [font_name]
+    plt.rcParams['font.family'] = 'sans-serif'
+    plt.rcParams['axes.unicode_minus'] = False
+
+# 运行配置函数
+configure_matplotlib_for_chinese()
+
+
 plt.figure(figsize=(12, 6))
 news_count_by_date.plot(kind='bar')
 plt.title('每日新闻数量')
