@@ -1,0 +1,20 @@
+{
+  "query_summary": "获取财联社的电报信息并分析新闻内容",
+  "steps": [
+    {
+      "step_number": 1,
+      "description": "从财联社获取电报信息",
+      "type": "data_retrieval",
+      "data_category": "新闻数据",
+      "save_data_to": "cls_telegraph_news"
+    },
+    {
+      "step_number": 2,
+      "description": "对获取的财联社电报信息进行内容分析和总结",
+      "type": "data_analysis",
+      "required_data": [
+        "cls_telegraph_news"
+      ]
+    }
+  ]
+}
