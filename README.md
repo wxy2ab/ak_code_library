@@ -1,6 +1,6 @@
 # ak_code_library
-这个库分享由ak_interpreter编写的代码.自由取用.但是使用代码自担风险.
-![logo](https://github.com/wxy2ab/akinterpreter/raw/main/docs/logo256.png)
+这个库分享由ak_interpreter编写的代码.自由取用.但是使用代码自担风险.  
+![logo](https://github.com/wxy2ab/akinterpreter/raw/main/docs/logo256.png)  
 
 无论如何，先做一些提醒，再分享其他项目
 - 🔮 代码不是算命先生：
