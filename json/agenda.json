@@ -18,29 +18,29 @@
         "index": 2
     },
     {
-        "key": "获取财联社的电报信息并分析新闻内容",
+        "key": "获取新浪财经的全球财经快讯信息，总结分析其内容，分析只使用LLM，不使用图表和词云(20条数据，大概10-30分钟左右数据)",
         "number_of_steps": 2,
-        "lines_of_code": 85,
-        "create_time": "2024-07-17T18:30:28.090648",
-        "path": "4c09638d-651e-40d7-a216-51e9d491d6a8/plan.json",
+        "lines_of_code": 43,
+        "create_time": "2024-07-18T16:18:08.150836",
+        "path": "a1c791ac-d14b-4a6b-8ff3-1c3d57a1ad3b/plan.json",
         "params": "",
         "index": 3
     },
     {
-        "key": "获取东方财富全球财经快讯信息，总结分析其内容",
+        "key": "获取东方财富全球财经快讯信息，总结分析其内容(200条数据，大概10小时左右)",
         "number_of_steps": 2,
         "lines_of_code": 71,
-        "create_time": "2024-07-18T15:04:06.180682",
+        "create_time": "2024-07-18T16:20:04.350837",
         "path": "4e5e01e6-d32d-4ed3-8a7a-e646f69d312f/plan.json",
         "params": "",
         "index": 4
     },
     {
-        "key": "获取新浪财经的全球财经快讯信息，总结分析其内容，分析只使用LLM，不使用图表和词云",
+        "key": "获取财联社的电报信息并分析新闻内容(300条数据，大概16个小时数据)",
         "number_of_steps": 2,
-        "lines_of_code": 43,
-        "create_time": "2024-07-18T16:01:15.780797",
-        "path": "a1c791ac-d14b-4a6b-8ff3-1c3d57a1ad3b/plan.json",
+        "lines_of_code": 85,
+        "create_time": "2024-07-18T16:23:35.770846",
+        "path": "4c09638d-651e-40d7-a216-51e9d491d6a8/plan.json",
         "params": "",
         "index": 5
     }
