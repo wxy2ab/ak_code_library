@@ -1,0 +1,20 @@
+{
+  "query_summary": "获取同花顺财经的全球财经直播信息，总结分析其内容。(20条数据，时间跨度大约40分钟)",
+  "steps": [
+    {
+      "step_number": 1,
+      "description": "获取同花顺财经全球财经直播信息",
+      "type": "data_retrieval",
+      "data_category": "新闻数据",
+      "save_data_to": "ths_global_financial_live"
+    },
+    {
+      "step_number": 2,
+      "description": "使用LLM分析和总结全球财经直播内容，不使用图表分析，不使用词云",
+      "type": "data_analysis",
+      "required_data": [
+        "ths_global_financial_live"
+      ]
+    }
+  ]
+}

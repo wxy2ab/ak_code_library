@@ -43,5 +43,14 @@
         "path": "4c09638d-651e-40d7-a216-51e9d491d6a8/plan.json",
         "params": "",
         "index": 5
+    },
+    {
+        "key": "获取同花顺财经的全球财经直播信息，总结分析其内容。(20条数据，时间跨度大约40分钟)",
+        "number_of_steps": 2,
+        "lines_of_code": 80,
+        "create_time": "2024-07-18T18:18:00.161080",
+        "path": "4660c400-9822-4fba-abaf-01b6056bd924/plan.json",
+        "params": "",
+        "index": 6
     }
 ]
