@@ -34,5 +34,14 @@
         "path": "4e5e01e6-d32d-4ed3-8a7a-e646f69d312f/plan.json",
         "params": "",
         "index": 4
+    },
+    {
+        "key": "获取新浪财经的全球财经快讯信息，总结分析其内容，分析只使用LLM，不使用图表和词云",
+        "number_of_steps": 2,
+        "lines_of_code": 43,
+        "create_time": "2024-07-18T16:01:15.780797",
+        "path": "a1c791ac-d14b-4a6b-8ff3-1c3d57a1ad3b/plan.json",
+        "params": "",
+        "index": 5
     }
 ]
