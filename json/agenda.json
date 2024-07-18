@@ -52,5 +52,14 @@
         "path": "4660c400-9822-4fba-abaf-01b6056bd924/plan.json",
         "params": "",
         "index": 6
+    },
+    {
+        "key": "获取富途牛牛的快讯信息，总结并分析其内容(50条数据，跨度大约60分钟)",
+        "number_of_steps": 2,
+        "lines_of_code": 67,
+        "create_time": "2024-07-18T18:28:18.731102",
+        "path": "283f25f1-8f3e-4eec-ae35-95a7d3c2eae6/plan.json",
+        "params": "",
+        "index": 7
     }
 ]

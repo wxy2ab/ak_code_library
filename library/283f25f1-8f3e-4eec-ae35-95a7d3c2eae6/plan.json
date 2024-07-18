@@ -1,0 +1,20 @@
+{
+  "query_summary": "获取富途牛牛的快讯信息，总结并分析其内容(50条数据，跨度大约60分钟)",
+  "steps": [
+    {
+      "step_number": 1,
+      "description": "获取富途牛牛的快讯信息",
+      "type": "data_retrieval",
+      "data_category": "新闻数据",
+      "save_data_to": "futu_news_flash"
+    },
+    {
+      "step_number": 2,
+      "description": "使用LLM分析和总结富途牛牛快讯内容，不使用图表分析，不使用词云",
+      "type": "data_analysis",
+      "required_data": [
+        "futu_news_flash"
+      ]
+    }
+  ]
+}
