@@ -25,5 +25,14 @@
         "path": "4c09638d-651e-40d7-a216-51e9d491d6a8/plan.json",
         "params": "",
         "index": 3
+    },
+    {
+        "key": "获取东方财富全球财经快讯信息，总结分析其内容",
+        "number_of_steps": 2,
+        "lines_of_code": 71,
+        "create_time": "2024-07-18T15:04:06.180682",
+        "path": "4e5e01e6-d32d-4ed3-8a7a-e646f69d312f/plan.json",
+        "params": "",
+        "index": 4
     }
 ]

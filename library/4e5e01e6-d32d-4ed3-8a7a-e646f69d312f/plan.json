@@ -1,0 +1,20 @@
+{
+  "query_summary": "获取东方财富全球财经快讯信息，总结分析其内容",
+  "steps": [
+    {
+      "step_number": 1,
+      "description": "获取东方财富全球财经快讯信息",
+      "type": "data_retrieval",
+      "data_category": "新闻数据",
+      "save_data_to": "eastmoney_global_financial_news"
+    },
+    {
+      "step_number": 2,
+      "description": "分析和总结全球财经快讯内容，不要使用图表分析，不要使用图云",
+      "type": "data_analysis",
+      "required_data": [
+        "eastmoney_global_financial_news"
+      ]
+    }
+  ]
+}
