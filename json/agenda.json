@@ -61,5 +61,14 @@
         "path": "283f25f1-8f3e-4eec-ae35-95a7d3c2eae6/plan.json",
         "params": "",
         "index": 7
+    },
+    {
+        "key": "获取个股2024年日线数据，使用LLM预测未来5天市场表现，并绘制包含历史数据和预测数据的图表，预测数据用红色表示",
+        "number_of_steps": 3,
+        "lines_of_code": 100,
+        "create_time": "2024-07-19T22:21:52.655179",
+        "path": "dcf75354-e340-4fd5-ae2f-3a5531c80bd3/plan.json",
+        "params": "num_of_predict,symbol",
+        "index": 8
     }
 ]

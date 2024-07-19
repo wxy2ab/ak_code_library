@@ -1,4 +1,4 @@
 from core.buil_parameters import build_parameters
 
 if __name__ == "__main__":
-    build_parameters("c6f95cfd-0abd-40f5-9544-2cb8aa673804", "把'300059'换成参数symbol")
+    build_parameters("dcf75354-e340-4fd5-ae2f-3a5531c80bd3", "把\"sh601919\"换成参数symbol,不要处理其他参数")
