@@ -27,6 +27,29 @@ python main.py $index parm1=value1 param2=value2
 需要配置setting.ini   
 如何配置参考 [akinterpreter](https://github.com/wxy2ab/akinterpreter)
 
+## 运行  
+### cli运行
+python main.py number_of_index parm1=value1 parm2=value2  
+```bash
+python main.py 1 symbol=601919
+```
+
+### web ui 运行
+#### windows
+```shell
+./start.bat
+```
+#### linux mac
+```bash
+./start.sh
+```
+
+## 分享你的代码
+本项目的代码是由 akinterpreter 编写而成.  
+如果你有好的思路，好的 idea，欢迎用 ![akinterpreter](https://github.com/wxy2ab/akinterpreter) 生成代码。  
+如果你想分享你的代码，请 fork 这个仓库，然后提交 pull request。  
+你可以用 akinterpreter 生成代码之后，用 export 导出代码
+导出的代码复制出来放在 ak_code_library/library 目录下，pull request。  
 ---
 
 # Table of Contents
