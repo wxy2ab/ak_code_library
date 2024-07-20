@@ -1,0 +1,57 @@
+{
+  "query_summary": "获取某股票新闻数据和2024年以来的日线数据，使用LLM预测未来5天市场表现，并绘制包含历史数据和预测数据的图表，预测数据用红色表示",
+  "steps": [
+    {
+      "step_number": 1,
+      "description": "获取中远海控的新闻数据",
+      "type": "data_retrieval",
+      "data_category": "新闻数据",
+      "save_data_to": "cosco_news_data",
+      "parameters": [
+        {
+          "key": "symbol",
+          "value": "601919"
+        }
+      ]
+    },
+    {
+      "step_number": 2,
+      "description": "获取中远海控2024年以来的日线股票数据",
+      "type": "data_retrieval",
+      "data_category": "股票数据",
+      "save_data_to": "cosco_daily_data_2024",
+      "parameters": [
+        {
+          "key": "symbol",
+          "value": "601919"
+        }
+      ]
+    },
+    {
+      "step_number": 3,
+      "description": "使用ll_client预测未来5个交易日的市场表现",
+      "type": "data_retrieval",
+      "data_category": "数据工具",
+      "required_data": [
+        "cosco_news_data",
+        "cosco_daily_data_2024"
+      ],
+      "save_data_to": "predictions",
+      "parameters": [
+        {
+          "key": "symbol",
+          "value": "601919"
+        }
+      ]
+    },
+    {
+      "step_number": 4,
+      "description": "绘制包含历史数据和预测数据的图表，预测数据用红色表示",
+      "type": "data_analysis",
+      "required_data": [
+        "cosco_daily_data_2024",
+        "predictions"
+      ]
+    }
+  ]
+}
