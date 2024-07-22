@@ -116,8 +116,8 @@ def check_proxy_running(host, port=10808,type="socks5"):
     try:
         if is_socket_connected(host, port):
             import os
-            os.environ["http_proxy"]  = f"{type}://{host}:{host}"
-            os.environ["https_proxy"] = f"{type}://{host}:{host}"
+            os.environ["http_proxy"]  = f"{type}://{host}:{port}"
+            os.environ["https_proxy"] = f"{type}://{host}:{port}"
         else:
             print("没有代理服务器")
     except Exception as e:
