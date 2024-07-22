@@ -1,15 +1,17 @@
 import os
 import re
 import importlib
-from typing import Dict, Type
+from typing import Any, Dict, Type
 from ..utils.single_ton import Singleton
 from ..utils.config_setting import Config
 from ._llm_api_client import LLMApiClient
+from ..utils.log import logger
 
 class LLMFactory(metaclass=Singleton):
     def __init__(self):
         self.llm_classes: Dict[str, str] = {}  # 存储类名和文件名的映射
         self._discover_llm_classes()
+        self._stop_words = None
 
     def _discover_llm_classes(self):
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -44,3 +46,21 @@ class LLMFactory(metaclass=Singleton):
 
     def list_available_llms(self) -> list[str]:
         return list(self.llm_classes.keys())
+    
+    def class_instantiation(self,name:str) -> Any:
+        if name == "LLMFactor":
+            try:
+                from core.planner.llm_factor import LLMFactor
+                client = self.get_instance()
+                return LLMFactor(client)
+            except Exception as e:
+                logger.error(f"Error creating LLMFactor: {e}")
+                return None
+        return None
+    
+    @property
+    def stop_words(self) -> set:
+        if self._stop_words is None:
+            from ..utils.stop_words import stop_words
+            self._stop_words = stop_words
+        return self._stop_words

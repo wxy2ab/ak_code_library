@@ -6,6 +6,7 @@ import os
 from collections import Counter
 from wordcloud import WordCloud
 import jieba
+import re
 
 # 确保output文件夹存在
 os.makedirs('output', exist_ok=True)
@@ -26,12 +27,20 @@ plt.rcParams['font.sans-serif'] = [font_path, 'Arial Unicode MS', 'Microsoft YaH
 
 # 访问之前步骤的数据
 data = cls_telegraph_news
+df = data
 
 # 1. 词云图
-text = ' '.join(data['标题'])
-words = jieba.cut(text)
-word_counts = Counter(words)
-filtered_word_counts = {word: count for word, count in word_counts.items() if count <= 60}
+def preprocess_text(text):
+    text = re.sub(r'[^\w\s]', '', text)
+    text = re.sub(r'\d+', '', text)
+    words = jieba.cut(text)
+    stop_words = llm_factory.stop_words
+    return [word for word in words if word not in stop_words and len(word) > 1]
+all_words = []
+for _, row in df.iterrows():
+    all_words.extend(preprocess_text(row['标题'] + row['内容']))
+word_counts = Counter(all_words)
+filtered_word_counts = {word: count for word, count in word_counts.items() if count <= 120}
 wordcloud = WordCloud(font_path=font_path, width=800, height=400, background_color='white').generate_from_frequencies(filtered_word_counts)
 plt.figure(figsize=(10, 5))
 plt.imshow(wordcloud, interpolation='bilinear')

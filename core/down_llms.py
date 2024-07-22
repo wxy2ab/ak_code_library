@@ -17,9 +17,12 @@ files_to_download = [
     "core/utils/log.py",
     "core/utils/retry.py",
     "core/utils/single_ton.py",
+    "core/utils/stop_words.py",
     "core/interpreter/__init__.py",
     "core/interpreter/ast_code_runner.py",
-    "core/interpreter/data_summarizer.py"
+    "core/interpreter/data_summarizer.py",
+    "core/planner/__init__.py",
+    "core/planner/llm_factor.py"
 ]
 # GitHub API URL for repository contents
 url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}?ref={branch}"

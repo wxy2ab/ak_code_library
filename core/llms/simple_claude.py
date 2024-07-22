@@ -10,6 +10,7 @@ import io
 from ..utils.retry import retry
 from ._llm_api_client import LLMApiClient
 from ..utils.config_setting import Config
+from ..utils.handle_max_tokens import handle_max_tokens
 
 class SimpleClaudeAwsClient(LLMApiClient):
     def __init__(self, 
@@ -87,6 +88,7 @@ class SimpleClaudeAwsClient(LLMApiClient):
             self.stat['output_tokens'] += response.usage.output_tokens
             self.stat["total_tokens"] += response.usage.input_tokens + response.usage.output_tokens
 
+    @handle_max_tokens
     def text_chat(self, message: str, max_tokens: Optional[int] = None, is_stream: bool = False) -> Union[str, Iterator[str]]:
         copy_history= self.history.copy()
         copy_history.append({"role": "user", "content": message})
@@ -201,7 +203,7 @@ class SimpleClaudeAwsClient(LLMApiClient):
 
             final_response = self.client.messages.create(
                 model=self.model,
-                max_tokens=max_tokens,
+                max_tokens=max_tokens or self.max_tokens,
                 messages=self.history + [{"role": "assistant", "content": assistant_message},
                                          {"role": "user", "content": f"工具函数返回结果: {tool_result}"}],
                 stream=True
@@ -336,4 +338,12 @@ class SimpleClaudeAwsClient(LLMApiClient):
 
     def video_chat(self, message: str, video_path: str) -> str:
         raise NotImplementedError("Video chat is not supported in this version of Claude API client.")
+    
+    @property
+    def stop(self):
+        return self._stop_sequences
+
+    @stop.setter
+    def stop(self, value):
+        self._stop_sequences = value
     

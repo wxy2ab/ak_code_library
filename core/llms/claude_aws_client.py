@@ -11,7 +11,7 @@ from PIL import Image
 import io
 from ..utils.retry import retry
 from ._llm_api_client import LLMApiClient
-
+from ..utils.handle_max_tokens import handle_max_tokens
 
 class ClaudeAwsClient(LLMApiClient):
 
@@ -128,6 +128,7 @@ class ClaudeAwsClient(LLMApiClient):
             self.stat["total_input_tokens"] += usage.input_tokens
             self.stat["total_output_tokens"] += usage.output_tokens
 
+    @handle_max_tokens
     def text_chat(self,
                   message: str,
                   max_tokens: Optional[ int] = None,
@@ -636,5 +637,11 @@ class ContinuousStreamIterator:
             if not self.initial_response_complete:
                 self._finalize_initial_response()
 
+    @property
+    def stop(self):
+        return self._stop_sequences
 
+    @stop.setter
+    def stop(self, value):
+        self._stop_sequences = value
 
