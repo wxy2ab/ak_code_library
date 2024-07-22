@@ -18,6 +18,7 @@ files_to_download = [
     "core/utils/retry.py",
     "core/utils/single_ton.py",
     "core/utils/stop_words.py",
+    "core/utils/handle_max_tokens.py",
     "core/interpreter/__init__.py",
     "core/interpreter/ast_code_runner.py",
     "core/interpreter/data_summarizer.py",

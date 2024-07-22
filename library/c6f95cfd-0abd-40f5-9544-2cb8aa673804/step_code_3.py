@@ -16,7 +16,7 @@ def preprocess_text(text):
     text = re.sub(r'[^\w\s]', '', text)
     text = re.sub(r'\d+', '', text)
     words = jieba.cut(text)
-    stop_words = set(['的', '了', '在', '是', '和', '与', '及', '或', '等', '也', '而', '但', '还', '只', '就'])
+    stop_words = llm_factory.stop_words
     return [word for word in words if word not in stop_words and len(word) > 1]
 
 all_words = []
