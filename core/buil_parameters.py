@@ -49,12 +49,18 @@ def build_parameters(path: str, user_hint: str = ""):
 def analyze_code_for_parameters(llm_client: Any, code: str, user_hint: str) -> List[Dict[str, str]]:
     prompt = f"""
     分析以下 Python 代码，并确定哪些值应该作为参数。返回一个参数列表，包括参数名和当前值。
-    如果提供了用户提示，请考虑用户的建议。
+    如果提供了用户提示，严格遵循用户提示，比如用户提示指定不要将某些内容作为参数，请确保不要包含这些内容。
+    用户用户提示不存在，自行判断哪些值应该作为参数。
+    允许最终输出不包含任何参数，如果没有参数提供返回:[]。
+    
+    用户提示：
+    {user_hint if user_hint else "无"}
     
     代码：
     {code}
     
-    用户提示：{user_hint if user_hint else "无"}
+    请仔细考虑用户提示，确保你的回答完全符合用户的要求。
+    如果用户提示指定了某些内容不应被视为参数，请确保这些内容不会出现在你的回答中。
     
     请以 JSON 格式返回参数列表，格式如下：
     [
@@ -62,6 +68,8 @@ def analyze_code_for_parameters(llm_client: Any, code: str, user_hint: str) -> L
         {{"key": "参数名2", "value": "参数值2"}},
         ...
     ]
+    
+    如果根据用户提示没有需要处理的参数，请返回空列表 []。
     """
     
     response = llm_client.one_chat(prompt)
@@ -70,7 +78,8 @@ def analyze_code_for_parameters(llm_client: Any, code: str, user_hint: str) -> L
     json_match = re.search(r'\[[\s\S]*\]', response)
     if json_match:
         try:
-            return json.loads(json_match.group())
+            parameters = json.loads(json_match.group())
+            return parameters
         except json.JSONDecodeError:
             print("提取的 JSON 格式无效。使用空列表作为参数。")
             return []

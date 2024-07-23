@@ -1,0 +1,61 @@
+{
+  "query_summary": "获取2024年至今的上证指数数据、中远海控的股票数据和新闻，使用llm_factor分析新闻和指数预测中远海控的未来走势，并绘制包含历史数据和预测数据的图表，预测数据用红色表示",
+  "steps": [
+    {
+      "step_number": 1,
+      "description": "获取2024年至今的上证指数数据",
+      "type": "data_retrieval",
+      "data_category": "指数数据",
+      "save_data_to": "shanghai_index_data_2024",
+      "parameters": []
+    },
+    {
+      "step_number": 2,
+      "description": "获取中远海控2024年至今的日线股票数据",
+      "type": "data_retrieval",
+      "data_category": "股票数据",
+      "save_data_to": "cosco_daily_data_2024",
+      "parameters": [
+        {
+          "key": "symbol",
+          "value": "601919"
+        }
+      ]
+    },
+    {
+      "step_number": 3,
+      "description": "获取中远海控2024年至今的新闻数据",
+      "type": "data_retrieval",
+      "data_category": "新闻数据",
+      "save_data_to": "cosco_news_data_2024",
+      "parameters": [
+        {
+          "key": "symbol",
+          "value": "601919"
+        }
+      ]
+    },
+    {
+      "step_number": 4,
+      "description": "使用llm_factor分析新闻和指数数据，预测中远海控未来走势",
+      "type": "data_retrieval",
+      "data_category": "数据工具",
+      "required_data": [
+        "shanghai_index_data_2024",
+        "cosco_daily_data_2024",
+        "cosco_news_data_2024"
+      ],
+      "save_data_to": "cosco_predictions",
+      "parameters": []
+    },
+    {
+      "step_number": 5,
+      "description": "绘制包含中远海控历史数据和预测数据的图表，预测数据用红色表示",
+      "type": "data_analysis",
+      "required_data": [
+        "cosco_daily_data_2024",
+        "cosco_predictions"
+      ]
+    }
+  ]
+}
