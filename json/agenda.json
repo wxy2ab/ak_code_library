@@ -1,21 +1,12 @@
 [
     {
-        "key": "检索并深入分析中远海控的最新研报数据，聚焦于市场机会、竞争、前景展望及潜在风险",
-        "number_of_steps": 3,
-        "lines_of_code": 69,
-        "create_time": "2024-07-17T17:50:28.820566",
-        "path": "5c6ed52f-13b7-42e6-8d6a-d1e6854c3102/plan.json",
-        "params": "symbol",
-        "index": 1
-    },
-    {
         "key": "获取个股新闻，总结内容，生成词云图",
         "number_of_steps": 3,
         "lines_of_code": 201,
         "create_time": "2024-07-17T17:51:49.100571",
         "path": "c6f95cfd-0abd-40f5-9544-2cb8aa673804/plan.json",
         "params": "symbol",
-        "index": 2
+        "index": 1
     },
     {
         "key": "获取新浪财经的全球财经快讯信息，总结分析其内容，分析只使用LLM，不使用图表和词云(20条数据，大概10-30分钟左右数据)",
@@ -24,7 +15,7 @@
         "create_time": "2024-07-18T16:18:08.150836",
         "path": "a1c791ac-d14b-4a6b-8ff3-1c3d57a1ad3b/plan.json",
         "params": "",
-        "index": 3
+        "index": 2
     },
     {
         "key": "获取东方财富全球财经快讯信息，总结分析其内容(200条数据，大概10小时左右)",
@@ -33,16 +24,16 @@
         "create_time": "2024-07-18T16:20:04.350837",
         "path": "4e5e01e6-d32d-4ed3-8a7a-e646f69d312f/plan.json",
         "params": "",
-        "index": 4
+        "index": 3
     },
     {
         "key": "获取财联社的电报信息并分析新闻内容(300条数据，大概16个小时数据)",
         "number_of_steps": 2,
-        "lines_of_code": 85,
+        "lines_of_code": 94,
         "create_time": "2024-07-18T16:23:35.770846",
         "path": "4c09638d-651e-40d7-a216-51e9d491d6a8/plan.json",
         "params": "",
-        "index": 5
+        "index": 4
     },
     {
         "key": "获取同花顺财经的全球财经直播信息，总结分析其内容。(20条数据，时间跨度大约40分钟)",
@@ -51,7 +42,7 @@
         "create_time": "2024-07-18T18:18:00.161080",
         "path": "4660c400-9822-4fba-abaf-01b6056bd924/plan.json",
         "params": "",
-        "index": 6
+        "index": 5
     },
     {
         "key": "获取富途牛牛的快讯信息，总结并分析其内容(50条数据，跨度大约60分钟)",
@@ -60,7 +51,7 @@
         "create_time": "2024-07-18T18:28:18.731102",
         "path": "283f25f1-8f3e-4eec-ae35-95a7d3c2eae6/plan.json",
         "params": "",
-        "index": 7
+        "index": 6
     },
     {
         "key": "获取个股2024年日线数据，使用LLM预测未来5天市场表现，并绘制包含历史数据和预测数据的图表，预测数据用红色表示",
@@ -69,15 +60,33 @@
         "create_time": "2024-07-19T22:21:52.655179",
         "path": "dcf75354-e340-4fd5-ae2f-3a5531c80bd3/plan.json",
         "params": "num_of_predict,symbol",
-        "index": 8
+        "index": 7
     },
     {
         "key": "获取某股票新闻数据和2024年以来的日线数据，使用LLM预测未来5天市场表现，并绘制包含历史数据和预测数据的图表，预测数据用红色表示",
         "number_of_steps": 4,
         "lines_of_code": 107,
-        "create_time": "2024-07-20T18:58:19.703113",
+        "create_time": "2024-07-23T09:17:46.247965",
         "path": "6c74bbc3-f4d1-43a9-8ded-d5f2f073670a/plan.json",
         "params": "symbol",
+        "index": 8
+    },
+    {
+        "key": "检索并深入分析某股票的最新研报数据，聚焦于市场机会、竞争、前景展望及潜在风险",
+        "number_of_steps": 3,
+        "lines_of_code": 69,
+        "create_time": "2024-07-23T09:59:17.628045",
+        "path": "5c6ed52f-13b7-42e6-8d6a-d1e6854c3102/plan.json",
+        "params": "symbol",
         "index": 9
+    },
+    {
+        "key": "获取2024年至今的上证指数数据、某股票数据和新闻，使用llm_factor分析新闻和指数预测未来走势",
+        "number_of_steps": 5,
+        "lines_of_code": 172,
+        "create_time": "2024-07-23T10:01:12.328048",
+        "path": "9a03783b-867d-4035-b968-de31464aa9cf/plan.json",
+        "params": "symbol",
+        "index": 10
     }
 ]
