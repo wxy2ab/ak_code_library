@@ -12,7 +12,7 @@ today = datetime.date.today()
 end_date = today.strftime("%Y%m%d")
 
 # 使用stock_zh_a_daily函数获取数据
-cosco_daily_data_2024 = ak.stock_zh_a_daily(symbol="601919.SH", start_date="20240101", end_date=end_date)
+cosco_daily_data_2024 = ak.stock_zh_a_daily(symbol=symbol, start_date="20240101", end_date=end_date)
 
 # 直接打印返回的数据，不做任何处理
 print(cosco_daily_data_2024)
