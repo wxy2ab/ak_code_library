@@ -88,5 +88,14 @@
         "path": "9a03783b-867d-4035-b968-de31464aa9cf/plan.json",
         "params": "symbol",
         "index": 10
+    },
+    {
+        "key": "查询2024年至今IH、IF、IC、IM和TS、TF、T、TK主连的日线数据，并用相关性函数分析它们之间涨跌的相关性",
+        "number_of_steps": 10,
+        "lines_of_code": 294,
+        "create_time": "2024-07-24T21:30:26.706108",
+        "path": "5e3a8c09-bacd-467f-858f-f7ca11d1ed9c/plan.json",
+        "params": "",
+        "index": 11
     }
 ]

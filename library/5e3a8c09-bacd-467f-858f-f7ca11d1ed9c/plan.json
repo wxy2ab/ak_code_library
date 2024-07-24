@@ -1,0 +1,91 @@
+{
+  "query_summary": "查询2024年至今IH、IF、IC、IM和TS、TF、T、TK主连的日线数据，并用相关性函数分析它们之间涨跌的相关性",
+  "steps": [
+    {
+      "step_number": 1,
+      "description": "获取2024年至今IH(中证50)主连的日线数据",
+      "type": "data_retrieval",
+      "data_category": "期货数据",
+      "save_data_to": "ih_data"
+    },
+    {
+      "step_number": 2,
+      "description": "获取2024年至今IF(中证300)主连的日线数据",
+      "type": "data_retrieval",
+      "data_category": "期货数据",
+      "save_data_to": "if_data"
+    },
+    {
+      "step_number": 3,
+      "description": "获取2024年至今IC(中证500)主连的日线数据",
+      "type": "data_retrieval",
+      "data_category": "期货数据",
+      "save_data_to": "ic_data"
+    },
+    {
+      "step_number": 4,
+      "description": "获取2024年至今IM(中证1000)主连的日线数据",
+      "type": "data_retrieval",
+      "data_category": "期货数据",
+      "save_data_to": "im_data"
+    },
+    {
+      "step_number": 5,
+      "description": "获取2024年至今TS(2年期国债)主连的日线数据",
+      "type": "data_retrieval",
+      "data_category": "期货数据",
+      "save_data_to": "ts_data"
+    },
+    {
+      "step_number": 6,
+      "description": "获取2024年至今TF(5年期国债)主连的日线数据",
+      "type": "data_retrieval",
+      "data_category": "期货数据",
+      "save_data_to": "tf_data"
+    },
+    {
+      "step_number": 7,
+      "description": "获取2024年至今T(10年期国债)主连的日线数据",
+      "type": "data_retrieval",
+      "data_category": "期货数据",
+      "save_data_to": "t_data"
+    },
+    {
+      "step_number": 8,
+      "description": "获取2024年至今TK(30年期国债)主连的日线数据",
+      "type": "data_retrieval",
+      "data_category": "期货数据",
+      "save_data_to": "tk_data"
+    },
+    {
+      "step_number": 9,
+      "description": "用相关性函数分析IH、IF、IC、IM、TS、TF、T、TK之间涨跌的相关性",
+      "type": "data_analysis",
+      "required_data": [
+        "ih_data",
+        "if_data",
+        "ic_data",
+        "im_data",
+        "ts_data",
+        "tf_data",
+        "t_data",
+        "tk_data"
+      ]
+    },
+    {
+      "step_number": 10,
+      "description": "生成相关性分析报告",
+      "type": "data_analysis",
+      "required_data": [
+        "ih_data",
+        "if_data",
+        "ic_data",
+        "im_data",
+        "ts_data",
+        "tf_data",
+        "t_data",
+        "tk_data"
+      ]
+    }
+  ]
+}
