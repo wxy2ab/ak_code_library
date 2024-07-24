@@ -1,3 +1,5 @@
+fastapi
+uvicorn
 colorlog 
 backoff
 anthropic[bedrock]
@@ -18,3 +20,8 @@ apscheduler
 wordcloud
 duckdb
 jieba
+playwright
+aiohttp
+tenacity
+pdfplumber
+ python-docx
