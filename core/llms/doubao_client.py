@@ -21,7 +21,7 @@ class DoubaoApiClient(LLMApiClient):
         }
         
         # 设置默认参数
-        self.max_tokens = 5000
+        self.max_tokens = 4096
         self.stop = None
         self.temperature = 1
         self.top_p = 1

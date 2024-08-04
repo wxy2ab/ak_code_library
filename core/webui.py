@@ -7,6 +7,7 @@ from datetime import datetime
 from core.llms.llm_factory import LLMFactory
 from core.interpreter.ast_code_runner import ASTCodeRunner
 from core.interpreter.data_summarizer import DataSummarizer
+from core.utils.code_tools_required import add_required_tools
 
 def load_global_vars():
     llm_factory = LLMFactory()
@@ -31,8 +32,11 @@ def execute_step(step, global_vars, saved_data, runner, analysis_results):
     with open(step_code_path, 'r', encoding='utf-8') as file:
         code = file.read()
 
-    for required_data in step.get("required_data", []):
-        global_vars[required_data] = saved_data.get(required_data)
+    has_code_tools = "code_tools" in code
+    
+    if not has_code_tools:
+        for required_data in step.get("required_data", []):
+            global_vars[required_data] = saved_data.get(required_data)
 
     result = runner.run(code, global_vars)
     
@@ -45,18 +49,25 @@ def execute_step(step, global_vars, saved_data, runner, analysis_results):
 
     global_vars.update(result["updated_vars"])
 
-    if "save_data_to" in step:
-        saved_data[step["save_data_to"]] = global_vars.get(step["save_data_to"])
+    if not has_code_tools:
+        if "save_data_to" in step:
+            saved_data[step["save_data_to"]] = global_vars.get(step["save_data_to"])
 
-    if step["type"] == "data_analysis":
-        analysis_result = global_vars.get("analysis_result", "")
+        if step["type"] == "data_analysis":
+            analysis_result = global_vars.get("analysis_result", "")
+            step_result = f"步骤 {step['step_number']}: {step['description']} 的输出是：{analysis_result}"
+            analysis_results.append(step_result)
+            st.write(step_result)
+
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        st.write(f"步骤 {step['step_number']} 完成。执行时间: {elapsed_time:.2f} 秒\n")
+    else:
+        step_number = step["step_number"]
+        analysis_result = add_required_tools.tools[f"analysis_result_{step_number}"]
         step_result = f"步骤 {step['step_number']}: {step['description']} 的输出是：{analysis_result}"
         analysis_results.append(step_result)
         st.write(step_result)
-
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    st.write(f"步骤 {step['step_number']} 完成。执行时间: {elapsed_time:.2f} 秒\n")
 
 def create_report_prompt(initial_query: str, results_summary: str) -> str:
     return f"""

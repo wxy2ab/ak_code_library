@@ -8,7 +8,11 @@ from ..utils.log import logger
 
 class LLMApiClient(ABC):
     """LLM API客户端（如Gemini）的抽象基类。"""
-
+    @abstractmethod
+    def one_chat(self, message: Union[str, List[Union[str, Any]]], is_stream: bool = False) -> Union[str, Iterator[str]]:
+        """执行单次聊天交互，不使用或存储聊天历史记录。"""
+        pass
+    
     @abstractmethod
     def text_chat(self, message: str, is_stream: bool = False) -> Union[str, Iterator[str]]:
         """处理文本消息并返回LLM的文本响应。"""
@@ -21,6 +25,13 @@ class LLMApiClient(ABC):
 
         - `tools`：工具规范列表（字典）。
         - `function_module`：包含要调用的工具函数的模块。
+
+        tool_chat的实现流程：
+        1. 将用户消息，tools 发送给API
+        2. 接收响应，处理里面的工具调用
+        3. 用function_module调配合解析出的函数名和参数用工具函数
+        4. 把结果返回给API
+        5. 获得并返回最终响应
         """
         pass
 
@@ -37,11 +48,6 @@ class LLMApiClient(ABC):
     @abstractmethod
     def clear_chat(self):
         """清除聊天历史或上下文。"""
-        pass
-
-    @abstractmethod
-    def one_chat(self, message: Union[str, List[Union[str, Any]]], is_stream: bool = False) -> Union[str, Iterator[str]]:
-        """执行单次聊天交互，不使用或存储聊天历史记录。"""
         pass
 
     @abstractmethod

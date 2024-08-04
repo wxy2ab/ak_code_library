@@ -6,6 +6,7 @@ from datetime import datetime
 from core.llms.llm_factory import LLMFactory
 from core.interpreter.ast_code_runner import ASTCodeRunner
 from core.interpreter.data_summarizer import DataSummarizer
+from core.utils.code_tools_required import add_required_tools
 
 def load_global_vars():
     llm_factory = LLMFactory()

@@ -24,24 +24,25 @@ class ASTCodeRunner:
             exec_globals['print'] = lambda *args, **kwargs: print(*args, **kwargs, file=redirected_output, flush=True)
             exec_globals['open'] = self.safe_open  # 使用安全的 open 函数
 
-            for node in tree.body:
-                self.execute_node(node, exec_globals)
-                output = redirected_output.getvalue()
-                if output:
-                    yield {"type": "output", "content": output}
-                    redirected_output.truncate(0)
-                    redirected_output.seek(0)
+            # 使用 exec 执行整个代码块，而不是逐节点执行
+            exec(compile(tree, '<string>', 'exec'), exec_globals)
+
+            # 捕获输出
+            output = redirected_output.getvalue()
+            if output:
+                yield {"type": "message", "content": output}
 
             # 返回更新后的变量
             updated_vars = {k: v for k, v in exec_globals.items() if k not in global_vars or global_vars[k] is not v}
-            yield {"type": "variables", "content": updated_vars}
+            yield {"type": "message", "content": updated_vars}
 
         except Exception as e:
             yield {"type": "error", "content": str(e)}
+            raise e
         finally:
             sys.stdout = old_stdout
 
-    def run(self, code: str, global_vars: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, code: str, global_vars: Dict[str, Any]={}) -> Dict[str, Any]:
         """
         input:
             code: 代码字符串

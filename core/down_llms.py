@@ -1,16 +1,23 @@
-from datetime import datetime
 import os
 import socket
 import requests
-import base64
+import time
+from datetime import datetime
+import configparser
+import json
+import concurrent.futures
 
 # GitHub repository details
 owner = "wxy2ab"
 repo = "akinterpreter"
-path = "core/llms"
-branch = "main"  # Change this to the correct branch if it's not 'main'
-path_utils = "core/utils"
-path_interpreter = "core/interpreter"
+branch = "main"
+
+# Paths for different types of files
+path_llms = "core/llms"
+path_llms_cheap = "core/llms_cheap"
+path_embedding = "core/embeddings"
+
+# List of individual files to download
 files_to_download = [
     "core/utils/__init__.py",
     "core/utils/config_setting.py",
@@ -25,6 +32,8 @@ files_to_download = [
     "core/interpreter/__init__.py",
     "core/interpreter/ast_code_runner.py",
     "core/interpreter/data_summarizer.py",
+    "core/blueprint/llm_provider.py",
+    "core/blueprint/__init__.py",
     "core/planner/__init__.py",
     "core/planner/llm_factor.py",
     "core/tushare_doc/__init__.py",
@@ -32,136 +41,144 @@ files_to_download = [
     "json/tushare_code_20240804.pickle",
     "json/tushare_code_20240804_index_content_ts_code.pickle",
 ]
-# GitHub API URL for repository contents
-url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}?ref={branch}"
 
-path_to_file = "core/utils/__init__.py"
-local_file_path = "./core/utils/__init__.py"
+def get_github_token():
+    config = configparser.ConfigParser()
+    try:
+        config.read('setting.ini')
+        return config.get('GitHub', 'token', fallback=None)
+    except:
+        return None
 
-def get_github_file_last_modified(owner, repo, branch, path_to_file):
-    url = f"https://api.github.com/repos/{owner}/{repo}/commits"
-    params = {
-        "path": path_to_file,
-        "sha": branch,
-        "per_page": 1
+github_token = get_github_token()
+
+def github_request(url, params=None, max_retries=3, delay=5):
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
-    response = requests.get(url, params=params)
-    if response.status_code == 200:
-        commit_info = response.json()
-        if commit_info:
-            last_modified = commit_info[0]['commit']['committer']['date']
-            return datetime.strptime(last_modified, '%Y-%m-%dT%H:%M:%SZ')
+    if github_token:
+        headers["Authorization"] = f"token {github_token}"
+    
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, params=params, headers=headers, timeout=30)
+            response.raise_for_status()
+            remaining = response.headers.get('X-RateLimit-Remaining')
+            if remaining:
+                print(f"Remaining API calls: {remaining}")
+            return response
+        except requests.exceptions.RequestException as e:
+            print(f"Attempt {attempt + 1} failed: {e}")
+            if attempt + 1 < max_retries:
+                print(f"Retrying in {delay} seconds...")
+                time.sleep(delay)
+            else:
+                print(f"Failed after {max_retries} attempts.")
+                return None
+
+def get_file_sha(owner, repo, path, branch):
+    url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
+    params = {"ref": branch}
+    response = github_request(url, params)
+    if response and response.status_code == 200:
+        content = response.json()
+        return content.get('sha')
     return None
 
-def get_local_file_last_modified(file_path):
-    if os.path.exists(file_path):
-        timestamp = os.path.getmtime(file_path)
-        return datetime.fromtimestamp(timestamp)
-    return None
-
-def is_remote_file_newer(owner, repo, branch, path_to_file, local_file_path):
-    remote_last_modified = get_github_file_last_modified(owner, repo, branch, path_to_file)
-    local_last_modified = get_local_file_last_modified(local_file_path)
-
-    if remote_last_modified and local_last_modified:
-        return remote_last_modified > local_last_modified
-    elif remote_last_modified:
-        # If local file doesn't exist, consider remote file as newer
-        return True
-    return False
-
-
-# Function to download a file from GitHub
-def download_file(file_info):
-    file_url = file_info["download_url"]
-    file_path = os.path.join(file_info["path"])
-
-    response = requests.get(file_url)
-    if response.status_code == 200:
-        with open(file_path, 'wb') as file:
-            file.write(response.content)
-        print(f"Downloaded: {file_path}")
-    else:
-        print(f"Failed to download: {file_path}")
-
-def down_llms():
-    # Fetch the list of files in the directory
-    response = requests.get(url)
-    if response.status_code == 200:
-        files = response.json()
-        for file_info in files:
-            if file_info["type"] == "file":
-                download_file(file_info)
-    else:
-        print(f"Failed to fetch file list from GitHub: {response.status_code}")
-
-    print("Download completed.")
-
-def download_single(file_path):
-    url = f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{file_path}"
-    local_path = os.path.join(file_path)
+def download_file(file_info, local_base_path="."):
+    file_path = file_info['path']
+    file_sha = file_info['sha']
+    url = file_info['download_url']
+    local_path = os.path.join(local_base_path, file_path)
 
     # Create local directory if it does not exist
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
 
-    response = requests.get(url)
-    if response.status_code == 200:
+    # Check if file needs updating
+    if os.path.exists(local_path):
+        with open(local_path, 'rb') as f:
+            import hashlib
+            local_sha = hashlib.sha1(f.read()).hexdigest()
+        if local_sha == file_sha:
+            print(f"Skipping {local_path}: File is up to date")
+            return
+
+    response = github_request(url)
+    if response and response.status_code == 200:
         with open(local_path, 'wb') as file:
             file.write(response.content)
         print(f"Downloaded: {local_path}")
     else:
-        print(f"Failed to download: {local_path} (Status code: {response.status_code})")
+        print(f"Failed to download: {local_path}")
 
+def down_llms(path, local_base_path="."):
+    url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
+    params = {"ref": branch}
+    response = github_request(url, params)
+    if response and response.status_code == 200:
+        files = response.json()
+        print(f"Found {len(files)} files in {path}")
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(download_file, file_info, local_base_path) 
+                       for file_info in files if file_info["type"] == "file"]
+            concurrent.futures.wait(futures)
+        
+        print(f"Finished processing {path}")
+    else:
+        print(f"Failed to fetch file list from GitHub for path: {path}")
+        if response:
+            print(f"Status code: {response.status_code}")
+            print(f"Response content: {response.text}")
+        else:
+            print("No response received from GitHub API")
 
 def is_socket_connected(host, port):
     try:
-        # 创建一个 socket 对象并尝试连接
-        with socket.create_connection((host, port), timeout=5) as sock:
+        with socket.create_connection((host, port), timeout=5):
             return True
     except (socket.timeout, ConnectionRefusedError):
         return False
 
-
-def check_proxy_running(host, port=10808,type="socks5"):
-    # 要检查的地址和端口
+def check_proxy_running(host, port=10808, proxy_type="socks5"):
     try:
         if is_socket_connected(host, port):
-            import os
-            os.environ["http_proxy"]  = f"{type}://{host}:{port}"
-            os.environ["https_proxy"] = f"{type}://{host}:{port}"
+            os.environ["http_proxy"] = f"{proxy_type}://{host}:{port}"
+            os.environ["https_proxy"] = f"{proxy_type}://{host}:{port}"
+            print(f"Connected to proxy: {proxy_type}://{host}:{port}")
         else:
-            print("没有代理服务器")
+            print("No proxy server found")
     except Exception as e:
         host = "127.0.0.1"
-        import os
-        os.environ["http_proxy"]  = f"{type}://{host}:10808"
-        os.environ["https_proxy"] = f"{type}://{host}:10808"
-        print("连接到代理")
+        os.environ["http_proxy"] = f"{proxy_type}://{host}:10808"
+        os.environ["https_proxy"] = f"{proxy_type}://{host}:10808"
+        print(f"Connected to default proxy: {proxy_type}://{host}:10808")
 
-def down_all_files():
+def download_all_files(local_base_path="."):
+    # Download files from specific directories
+    for path in [path_llms, path_llms_cheap, path_embedding]:
+        print(f"Downloading files from {path}")
+        down_llms(path, local_base_path)
 
-    # Create the directory if it doesn't exist
-    if not os.path.exists(path):
-        os.makedirs(path)
-    down_llms()
-
-    if not os.path.exists(path_interpreter):
-        os.makedirs(path_interpreter)
-
-    if not os.path.exists(path_utils):
-        os.makedirs(path_utils)
+    # Download individual files
     for file_path in files_to_download:
-        download_single(file_path)
-
-
-def is_need_update():
-    proxy_host="127.0.0.1"
-    proxy_port=10809
-    running = is_socket_connected(proxy_host,proxy_port)
-    if running:
-        check_proxy_running(proxy_host,proxy_port,"http")
-
-    return is_remote_file_newer(owner, repo, branch, path_to_file, local_file_path)
+        file_info = {
+            'path': file_path,
+            'sha': get_file_sha(owner, repo, file_path, branch),
+            'download_url': f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{file_path}"
+        }
+        download_file(file_info, local_base_path)
 
 if __name__ == "__main__":
-    down_all_files()
+    if github_token:
+        print("GitHub token found. Using authenticated requests.")
+    else:
+        print("No GitHub token found. Using unauthenticated requests. Rate limits may apply.")
+    
+    proxy_host = "127.0.0.1"
+    proxy_port = 10809
+    if is_socket_connected(proxy_host, proxy_port):
+        check_proxy_running(proxy_host, proxy_port, "http")
+    
+    download_all_files()
