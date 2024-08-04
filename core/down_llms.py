@@ -19,12 +19,18 @@ files_to_download = [
     "core/utils/single_ton.py",
     "core/utils/stop_words.py",
     "core/utils/timer.py",
+    "core/utils/code_tools.py",
     "core/utils/handle_max_tokens.py",
+    "core/utils/code_tools_required.py",
     "core/interpreter/__init__.py",
     "core/interpreter/ast_code_runner.py",
     "core/interpreter/data_summarizer.py",
     "core/planner/__init__.py",
-    "core/planner/llm_factor.py"
+    "core/planner/llm_factor.py",
+    "core/tushare_doc/__init__.py",
+    "core/tushare_doc/ts_code_matcher.py",
+    "json/tushare_code_20240804.pickle",
+    "json/tushare_code_20240804_index_content_ts_code.pickle",
 ]
 # GitHub API URL for repository contents
 url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}?ref={branch}"

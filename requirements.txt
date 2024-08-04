@@ -26,3 +26,7 @@ tenacity
 pdfplumber
 python-docx
 seaborn 
+tushare
+fuzzywuzzy
+rapidfuzz
+python-Levenshtein
