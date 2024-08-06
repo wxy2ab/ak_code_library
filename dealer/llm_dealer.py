@@ -1,5 +1,6 @@
 from enum import Enum
 import json
+import os
 import time
 import numpy as np
 import pandas as pd
@@ -95,7 +96,7 @@ class TradePositionManager:
 
 class LLMDealer:
     def __init__(self, llm_client, symbol: str, data_provider: MainContractProvider,
-                 max_daily_bars: int = 30, max_hourly_bars: int = 12, max_minute_bars: int = 60,
+                 max_daily_bars: int = 60, max_hourly_bars: int = 30, max_minute_bars: int = 240,
                  backtest_date: Optional[str] = None, compact_mode: bool = False,
                  max_position: int = 5):
         self.symbol = symbol
@@ -134,6 +135,21 @@ class LLMDealer:
         logging.basicConfig(level=logging.DEBUG)
         self.logger = logging.getLogger(__name__)
         self.timezone = pytz.timezone('Asia/Shanghai') 
+        self._setup_logging()
+    def _setup_logging(self):
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.DEBUG)
+
+        # Create a formatter
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+        # Create a handler for console output
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(formatter)
+
+        # Add the console handler to the logger
+        self.logger.addHandler(console_handler)
 
     def _get_latest_news(self):
         if self.is_backtest:
@@ -436,7 +452,7 @@ class LLMDealer:
             """
 
         input_template = f"""
-        你时候一位经验老道的交易员，不放弃每个机会，也随时警惕风险。你认真思考，审视数据，做出交易决策。
+        你时候一位经验老道的期货交易员，熟悉期货规律，掌握交易中获利的技巧。不放弃每个机会，也随时警惕风险。你认真思考，审视数据，做出交易决策。
         上一次的消息: {self.last_msg}
         当前 bar index: {len(self.today_minute_bars) - 1}
 
@@ -641,69 +657,55 @@ class LLMDealer:
         return False
 
     def _log_bar_info(self, bar: Union[pd.Series, dict], news: str, trade_instruction: str):
-        """记录每个 bar 的信息"""
         try:
-            # 打印 bar 的类型和内容，以便调试
-            logging.debug(f"Bar type: {type(bar)}")
-            logging.debug(f"Bar content: {bar}")
+            # Ensure the output directory exists
+            os.makedirs('./output', exist_ok=True)
 
-            # 如果 bar 是字典，将其转换为 pd.Series
+            # Create or get the file handler for the current date
+            current_date = datetime.now().strftime('%Y%m%d')
+            file_handler = next((h for h in self.logger.handlers if isinstance(h, logging.FileHandler) and h.baseFilename.endswith(f'{current_date}.log')), None)
+            
+            if not file_handler:
+                # If the file handler for the current date doesn't exist, create a new one
+                file_path = f'./output/log{current_date}.log'
+                file_handler = logging.FileHandler(file_path)
+                file_handler.setLevel(logging.DEBUG)
+                file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+                self.logger.addHandler(file_handler)
+
+                # Remove old file handlers
+                for handler in self.logger.handlers[:]:
+                    if isinstance(handler, logging.FileHandler) and not handler.baseFilename.endswith(f'{current_date}.log'):
+                        self.logger.removeHandler(handler)
+                        handler.close()
+
+            # Convert bar to pd.Series if it's a dict
             if isinstance(bar, dict):
                 bar = pd.Series(bar)
-            elif isinstance(bar, str):
-                # 如果 bar 是字符串，尝试解析它
-                try:
-                    bar = pd.Series(eval(bar))
-                except:
-                    logging.error(f"Unable to parse bar string: {bar}")
-                    return
-            elif not isinstance(bar, pd.Series):
-                raise TypeError(f"bar must be a pandas Series or dict, but got {type(bar)}")
 
-            # 使用 .get() 方法安全地访问 bar 的属性
-            datetime = pd.to_datetime(bar.get('datetime', 'N/A'))
-            open_price = bar.get('open', 'N/A')
-            high_price = bar.get('high', 'N/A')
-            low_price = bar.get('low', 'N/A')
-            close_price = bar.get('close', 'N/A')
-            volume = bar.get('volume', 'N/A')
-            open_interest = bar.get('open_interest', bar.get('hold', 'N/A'))
-
-            # 修改格式化函数来处理字符串和数值
-            def format_price(x):
-                if isinstance(x, (int, float)):
-                    return f"{x:.2f}"
-                elif isinstance(x, str):
-                    try:
-                        return f"{float(x):.2f}"
-                    except ValueError:
-                        return x
-                else:
-                    return str(x)
-                
-            profits = self.position_manager.calculate_profits(bar['close'])
-            profit_info = f"""
-            实际盈亏: {profits['realized_profit']:.2f}
-            浮动盈亏: {profits['unrealized_profit']:.2f}
-            总盈亏: {profits['total_profit']:.2f}
-            """
-
-            position_details = self.position_manager.get_position_details()
-            news_info = f"新闻: {news[:200]}..." if news and news.strip() else "无新闻数据"
-
+            # Format the log message
             log_msg = f"""
-            时间: {datetime}, Bar Index: {self._get_today_bar_index(datetime) if isinstance(datetime, pd.Timestamp) else 'N/A'}
-            价格: 开 {format_price(open_price)}, 高 {format_price(high_price)}, 低 {format_price(low_price)}, 收 {format_price(close_price)}
-            成交量: {volume}, 持仓量: {open_interest}
-            {news_info}
+            时间: {pd.to_datetime(bar['datetime'])}, Bar Index: {self._get_today_bar_index(pd.to_datetime(bar['datetime']))}
+            价格: 开 {bar['open']:.2f}, 高 {bar['high']:.2f}, 低 {bar['low']:.2f}, 收 {bar['close']:.2f}
+            成交量: {bar['volume']}, 持仓量: {bar.get('open_interest', bar.get('hold', 'N/A'))}
+            新闻: {news[:200] + '...' if news else '无新闻数据'}
             交易指令: {trade_instruction}
             当前持仓: {self.position_manager.get_current_position()}
-            {profit_info}
-            {position_details}
+            盈亏情况:
+            {self.position_manager.calculate_profits(bar['close'])}
+            {self.position_manager.get_position_details()}
             """
-            logging.info(log_msg)
+
+            # Log to file (DEBUG level includes all information)
+            self.logger.debug(log_msg)
+
+            # Log to console only if there's a trade instruction (excluding 'hold')
+            if trade_instruction.lower() != 'hold':
+                console_msg = f"时间: {pd.to_datetime(bar['datetime'])}, 价格: {bar['close']:.2f}, 交易指令: {trade_instruction}, 当前持仓: {self.position_manager.get_current_position()}"
+                self.logger.info(console_msg)
+
         except Exception as e:
-            logging.error(f"Error in _log_bar_info: {str(e)}", exc_info=True)
+            self.logger.error(f"Error in _log_bar_info: {str(e)}", exc_info=True)
     
     def process_bar(self, bar: pd.Series, news: str = "") -> Tuple[str, Union[int, str], str]:
         try:
