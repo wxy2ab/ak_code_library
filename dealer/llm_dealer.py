@@ -1,14 +1,17 @@
 import json
+import time
 import pandas as pd
-from typing import Tuple, Literal
+from typing import Tuple, Literal, Optional
 import logging
 import re
+from datetime import datetime, timedelta
 
 from dealer.futures_provider import MainContractProvider
 
 class LLMDealer:
     def __init__(self, llm_client, symbol: str, data_provider: MainContractProvider,
-                 max_daily_bars: int = 30, max_hourly_bars: int = 24, max_minute_bars: int = 60):
+                 max_daily_bars: int = 30, max_hourly_bars: int = 24, max_minute_bars: int = 60,
+                 backtest_date: Optional[str] = None):
         """
         初始化 LLMDealer 类
         
@@ -18,6 +21,7 @@ class LLMDealer:
         :param max_daily_bars: 保留的最大日线历史数据天数
         :param max_hourly_bars: 保留的最大小时线历史数据条数
         :param max_minute_bars: 保留的最大分钟线历史数据条数
+        :param backtest_date: 回测日期，格式为'YYYY-MM-DD'，如果不提供则使用当前日期
         """
         self.llm_client = llm_client
         self.symbol = symbol
@@ -25,6 +29,7 @@ class LLMDealer:
         self.max_daily_bars = max_daily_bars
         self.max_hourly_bars = max_hourly_bars
         self.max_minute_bars = max_minute_bars
+        self.backtest_date = backtest_date or datetime.now().strftime('%Y-%m-%d')
         
         self.daily_history = self._initialize_history('D')
         self.hourly_history = self._initialize_history('60')
@@ -35,16 +40,21 @@ class LLMDealer:
 
     def _initialize_history(self, period: Literal['1', '5', '15', '30', '60', 'D']) -> pd.DataFrame:
         """初始化历史数据，并确保日期列的一致性"""
-        df = self.data_provider.get_bar_data(self.symbol, period)
         if period == 'D':
-            df = self._standardize_daily_data(df)
+            df = self.data_provider.get_rqbar(self.symbol, 
+                                              (datetime.strptime(self.backtest_date, '%Y-%m-%d') - timedelta(days=self.max_daily_bars)).strftime('%Y-%m-%d'), 
+                                              self.backtest_date, 
+                                              '1d')
+            df = df.reset_index()
+            df = df.rename(columns={'date': 'datetime'})
+        else:
+            frequency_map = {'1': '1m', '5': '5m', '15': '15m', '30': '30m', '60': '60m'}
+            df = self.data_provider.get_rqbar(self.symbol, 
+                                              (datetime.strptime(self.backtest_date, '%Y-%m-%d') - timedelta(days=5)).strftime('%Y-%m-%d'), 
+                                              self.backtest_date, 
+                                              frequency_map[period])
+            df = df.reset_index()
         return self._limit_history(df, period)
-
-    def _standardize_daily_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """标准化日线数据，使其与分钟数据格式一致"""
-        df['datetime'] = pd.to_datetime(df['date'])
-        df = df.drop(columns=['date'])
-        return df
 
     def _limit_history(self, df: pd.DataFrame, period: str) -> pd.DataFrame:
         """根据时间周期限制历史数据的长度"""
@@ -55,26 +65,26 @@ class LLMDealer:
         else:
             return df.tail(self.max_minute_bars)
 
-    def _update_histories_old(self, bar: pd.Series):
+    def _update_histories(self, bar: pd.Series):
         """更新历史数据"""
         # 更新分钟数据
-        self.minute_history = self.minute_history.append(bar, ignore_index=True).tail(self.max_minute_bars)
+        self.minute_history = pd.concat([self.minute_history, bar.to_frame().T], ignore_index=True).tail(self.max_minute_bars)
         
         # 更新今日分钟数据
         if not self.today_minute_bars or bar['datetime'].date() > self.today_minute_bars[-1]['datetime'].date():
             self.today_minute_bars = [bar]
-        else:
+        elif self._is_trading_time(bar['datetime']):
             self.today_minute_bars.append(bar)
         
         # 更新小时数据
-        if bar['datetime'].minute == 0:
-            self.hourly_history = self.hourly_history.append(bar, ignore_index=True).tail(self.max_hourly_bars)
+        if bar['datetime'].minute == 0 and self._is_trading_time(bar['datetime']):
+            self.hourly_history = pd.concat([self.hourly_history, bar.to_frame().T], ignore_index=True).tail(self.max_hourly_bars)
         
         # 更新日线数据
         if bar['datetime'].hour == 15 and bar['datetime'].minute == 0:
             daily_bar = bar.copy()
             daily_bar['datetime'] = daily_bar['datetime'].date()
-            self.daily_history = self.daily_history.append(daily_bar, ignore_index=True).tail(self.max_daily_bars)
+            self.daily_history = pd.concat([self.daily_history, daily_bar.to_frame().T], ignore_index=True).tail(self.max_daily_bars)
 
     def _format_history(self) -> dict:
         """格式化历史数据，确保所有数据都被包含，并且格式一致"""
@@ -105,6 +115,9 @@ class LLMDealer:
         """准备发送给 LLM 的输入数据"""
         formatted_history = self._format_history()
         
+        # 检查 'open_interest' 字段是否存在，如果不存在，使用替代字段或默认值
+        open_interest = bar.get('open_interest', bar.get('hold', 'N/A'))
+        
         input_template = f"""
         上一次的消息: {self.last_msg}
         当前 bar index: {self._get_today_bar_index(bar['datetime'])}
@@ -128,7 +141,7 @@ class LLMDealer:
         最低: {bar['low']:.2f}
         收盘: {bar['close']:.2f}
         成交量: {bar['volume']}
-        持仓量: {bar['hold']}
+        持仓量: {open_interest}
 
         最新新闻:
         {news}
@@ -213,35 +226,47 @@ class LLMDealer:
                 return True
         return False
 
-    def _update_histories(self, bar: pd.Series):
-        """更新历史数据"""
-        # 更新分钟数据
-        self.minute_history = pd.concat([self.minute_history, bar.to_frame().T], ignore_index=True).tail(self.max_minute_bars)
-        
-        # 更新今日分钟数据
-        if not self.today_minute_bars or bar['datetime'].date() > self.today_minute_bars[-1]['datetime'].date():
-            self.today_minute_bars = [bar]
-        elif self._is_trading_time(bar['datetime']):
-            self.today_minute_bars.append(bar)
-        
-        # 更新小时数据
-        if bar['datetime'].minute == 0 and self._is_trading_time(bar['datetime']):
-            self.hourly_history = pd.concat([self.hourly_history, bar.to_frame().T], ignore_index=True).tail(self.max_hourly_bars)
-        
-        # 更新日线数据
-        if bar['datetime'].hour == 15 and bar['datetime'].minute == 0:
-            daily_bar = bar.copy()
-            daily_bar['datetime'] = daily_bar['datetime'].date()
-            self.daily_history = pd.concat([self.daily_history, daily_bar.to_frame().T], ignore_index=True).tail(self.max_daily_bars)
-
     def _log_bar_info(self, bar: pd.Series, news: str, trade_instruction: str):
         """记录每个 bar 的信息"""
+        # 检查 'open_interest' 字段是否存在，如果不存在，使用替代字段或默认值
+        open_interest = bar.get('open_interest', bar.get('hold', 'N/A'))
+        
         log_msg = f"""
         时间: {bar['datetime']}, Bar Index: {self._get_today_bar_index(bar['datetime'])}
-        价格: 开 {bar['open']}, 高 {bar['high']}, 低 {bar['low']}, 收 {bar['close']}
-        成交量: {bar['volume']}, 持仓量: {bar['hold']}
+        价格: 开 {bar['open']:.2f}, 高 {bar['high']:.2f}, 低 {bar['low']:.2f}, 收 {bar['close']:.2f}
+        成交量: {bar['volume']}, 持仓量: {open_interest}
         新闻: {news[:100]}...  # 截取前100个字符
         交易指令: {trade_instruction}
         当前持仓: {self.position}
         """
         logging.info(log_msg)
+
+    def process_bar(self, bar: pd.Series, news: str = "") -> Tuple[str, str]:
+        """处理单个 bar 的数据"""
+        self._update_histories(bar)
+        llm_input = self._prepare_llm_input(bar, news)
+        
+        max_retries = 3
+        retry_delay = 10  # 秒
+        
+        for attempt in range(max_retries):
+            try:
+                llm_response = self.llm_client.one_chat(llm_input)
+                break  # 如果成功，跳出循环
+            except Exception as e:
+                if attempt < max_retries - 1:  # 如果不是最后一次尝试
+                    logging.warning(f"Rate limit reached. Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # 指数退避
+                else:
+                    logging.error("Max retries reached. Unable to get response from LLM.")
+                    return "hold", ""  # 返回默认行为
+            except Exception as e:
+                logging.error(f"Unexpected error occurred: {e}")
+                return "hold", ""  # 返回默认行为
+        
+        trade_instruction, next_msg = self._parse_llm_output(llm_response)
+        self._execute_trade(trade_instruction)
+        self._log_bar_info(bar, news, trade_instruction)
+        self.last_msg = next_msg
+        return trade_instruction, next_msg

@@ -1,18 +1,32 @@
 
 
 
+from dealer.backtester import Backtester
+from dealer.futures_provider import MainContractProvider
+
 
 def test():
-    import akshare as ak
-    from dealer.futures_provider import MainContractProvider
-    from dealer.futures_provider import MainContractGetter
-    from core.interpreter.data_summarizer import DataSummarizer
-    data = MainContractProvider()
+    symbol = "SC"
+    start_date = "2024-06-01"
+    end_date = "2024-06-02"
     
-    df = data.get_futures_news(code="SC0")
-    print(df)   
-    #df = ak.futures_zh_minute_sina(symbol="Cu0",period="1")
+    data_provider = MainContractProvider()
+    from core.llms.llm_factory import LLMFactory
+    factory = LLMFactory()
 
+    llm_client = factory.get_instance("MiniMaxClient")
+    
+    backtester = Backtester(symbol, start_date, end_date, llm_client, data_provider)
+    backtester.run_backtest()
+    
+    # 获取详细的交易历史
+    trade_history = backtester.get_trade_history()
+    print(trade_history)
+
+def test1():
+    data_provider = MainContractProvider()
+    df=data_provider.get_rqbar("SC", "2024-06-01", "2024-06-02", "1d")
+    print(df)
 
 def main():
     test()

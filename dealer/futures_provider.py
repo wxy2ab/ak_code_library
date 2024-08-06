@@ -1,4 +1,5 @@
 
+from datetime import datetime, timedelta
 import hashlib
 import random
 import re
@@ -8,6 +9,8 @@ import akshare as ak
 import pandas as pd
 import requests
 from core.utils.single_ton import Singleton
+import rqdatac as rq
+rq.init()
 
 from core.tushare_doc.ts_code_matcher import StringMatcher
 
@@ -25,20 +28,44 @@ class MainContractProvider:
     def __init__(self) -> None:
         self.code_getter = MainContractGetter()
     
-    def get_bar_data(self,name:str,period:Literal['1','5','15','30','60','D']='1'):
+    def get_bar_data(self, name: str, period: Literal['1', '5', '15', '30', '60', 'D'] = '1', date: Optional[str] = None):
         """
-        返回值：
-        如果是分钟数据：datetime     open     high      low    close  volume    hold
-        分钟数据 1023行 index 0-1022
-        如果是日数据：date     open     high      low    close  volume    hold
-        返回历史全部数据
+        获取期货合约的bar数据
+        
+        :param name: 合约名称
+        :param period: 时间周期，默认为'1'（1分钟）
+        :param date: 回测日期，格式为'YYYY-MM-DD'，如果不提供则使用当前日期
+        :return: DataFrame包含bar数据
         """
-        code = self.code_getter[name]
+        if date is None:
+            date = datetime.now().strftime('%Y-%m-%d')
+        
+        end_date = datetime.strptime(date, '%Y-%m-%d')
         if period == 'D':
-            return ak.futures_zh_daily_sina(symbol=code)
-        df = ak.futures_zh_minute_sina(symbol=code,period=period)
+            start_date = end_date - timedelta(days=365)  # 获取一年的日线数据
+        else:
+            start_date = end_date - timedelta(days=5)  # 获取5天的分钟数据
+        
+        frequency_map = {'1': '1m', '5': '5m', '15': '15m', '30': '30m', '60': '1h', 'D': '1d'}
+        frequency = frequency_map[period]
+        
+        code = self.code_getter[name]
+        if code.endswith('0'):
+            code = code[:-1]
+        
+        df = self.get_rqbar(code, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), frequency)
+        
+        if period != 'D':
+            df = df.reset_index()
+            df = df.rename(columns={'datetime': 'datetime', 'open': 'open', 'high': 'high', 'low': 'low', 'close': 'close', 'volume': 'volume', 'open_interest': 'hold'})
+        else:
+            df = df.reset_index()
+            df['date'] = df['datetime'].dt.date
+            df = df.rename(columns={'date': 'date', 'open': 'open', 'high': 'high', 'low': 'low', 'close': 'close', 'volume': 'volume', 'open_interest': 'hold'})
+            df = df.drop(columns=['datetime'])
+        
         return df
-    
+
     def get_main_contract(self):
         df = ak.futures_display_main_sina()
         df["content"] = df['symbol'] +'.'+df['exchange']+','+ df['name']
@@ -50,10 +77,10 @@ class MainContractProvider:
         from core.tushare_doc.ts_code_matcher import StringMatcher
         matcher = StringMatcher(df, index_cache='./json/main_contract_index_cache.pickle', index_column='content', result_column='symbol')
     
-    def get_shment_news(self,symbol:str='全部'):
+    def get_shment_news(self, symbol: str = '全部'):
         return ak.futures_news_shmet(symbol=symbol)
 
-    def generate_acs_token():
+    def generate_acs_token(self):
         current_time = int(time.time() * 1000)
         random_num = random.randint(1000000000000000, 9999999999999999)  # 16位随机数
         
@@ -74,8 +101,8 @@ class MainContractProvider:
         
         return final_token   
     
-    def get_futures_news(self,code: str = 'SC0', page_num: int = 0, page_size: int = 20) -> Optional[pd.DataFrame]:
-        code=f"{code[:-1]}888" if code.endswith('0') else f"{code}888"
+    def get_futures_news(self, code: str = 'SC0', page_num: int = 0, page_size: int = 20) -> Optional[pd.DataFrame]:
+        code = f"{code[:-1]}888" if code.endswith('0') else f"{code}888"
         url = 'https://finance.pae.baidu.com/vapi/getfuturesnews'
         
         headers = {
@@ -129,6 +156,11 @@ class MainContractProvider:
             print(f"An error occurred: {e}")
             return None
 
+    def get_rqbar(self, symbol: str, start_date: str, end_date: str, frequency: str = '1m', adjust_type: str = 'none'):
+        if symbol.endswith('0'):
+            symbol = symbol[:-1]
+        
+        return rq.futures.get_dominant_price(symbol, start_date, end_date, frequency, adjust_type=adjust_type)
 
 def curl_to_python_code(curl_command: str) -> str:
     # Extract URL
