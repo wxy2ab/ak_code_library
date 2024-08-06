@@ -8,7 +8,7 @@ from dealer.futures_provider import MainContractProvider
 def test():
     symbol = "SC"
     start_date = "2024-06-03"
-    end_date = "2024-06-8"
+    end_date = "2024-06-4"
     
     data_provider = MainContractProvider()
     from core.llms.llm_factory import LLMFactory

@@ -1,3 +1,4 @@
+from enum import Enum
 import json
 import time
 import numpy as np
@@ -8,12 +9,89 @@ from ta.trend import SMAIndicator, EMAIndicator
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
 from ta.volatility import BollingerBands, AverageTrueRange
-from typing import Tuple, Literal, Optional, Union
+from typing import Dict, List, Tuple, Literal, Optional, Union
 import logging
 import re
 from datetime import datetime, timedelta, time as dt_time
+from dealer.trade_time import get_trading_end_time
 
 from dealer.futures_provider import MainContractProvider
+
+
+class PositionType(Enum):
+    LONG = 1
+    SHORT = 2
+
+class TradePosition:
+    def __init__(self, entry_price: float, position_type: PositionType, entry_time: pd.Timestamp):
+        self.entry_price = entry_price
+        self.position_type = position_type
+        self.entry_time = entry_time
+        self.exit_price = None
+        self.exit_time = None
+
+    def close_position(self, exit_price: float, exit_time: pd.Timestamp):
+        self.exit_price = exit_price
+        self.exit_time = exit_time
+
+    def calculate_profit(self, current_price: float) -> float:
+        price_diff = current_price - self.entry_price if self.position_type == PositionType.LONG else self.entry_price - current_price
+        if self.exit_price is not None:
+            price_diff = self.exit_price - self.entry_price if self.position_type == PositionType.LONG else self.entry_price - self.exit_price
+        return price_diff
+
+    def is_closed(self) -> bool:
+        return self.exit_price is not None
+
+class TradePositionManager:
+    def __init__(self):
+        self.positions: List[TradePosition] = []
+
+    def open_position(self, price: float, quantity: int, is_long: bool, entry_time: pd.Timestamp):
+        position_type = PositionType.LONG if is_long else PositionType.SHORT
+        for _ in range(quantity):
+            self.positions.append(TradePosition(price, position_type, entry_time))
+
+    def close_positions(self, price: float, quantity: int, is_long: bool, exit_time: pd.Timestamp) -> int:
+        position_type = PositionType.LONG if is_long else PositionType.SHORT
+        closed = 0
+        for position in self.positions:
+            if closed >= quantity:
+                break
+            if position.position_type == position_type and not position.is_closed():
+                position.close_position(price, exit_time)
+                closed += 1
+        return closed
+
+    def calculate_profits(self, current_price: float) -> Dict[str, float]:
+        realized_profit = sum(pos.calculate_profit(current_price) for pos in self.positions if pos.is_closed())
+        unrealized_profit = sum(pos.calculate_profit(current_price) for pos in self.positions if not pos.is_closed())
+        return {
+            "realized_profit": realized_profit,
+            "unrealized_profit": unrealized_profit,
+            "total_profit": realized_profit + unrealized_profit
+        }
+
+    def get_current_position(self) -> int:
+        long_positions = sum(1 for pos in self.positions if pos.position_type == PositionType.LONG and not pos.is_closed())
+        short_positions = sum(1 for pos in self.positions if pos.position_type == PositionType.SHORT and not pos.is_closed())
+        return long_positions - short_positions
+
+    def get_position_details(self) -> str:
+        long_positions = [pos for pos in self.positions if pos.position_type == PositionType.LONG and not pos.is_closed()]
+        short_positions = [pos for pos in self.positions if pos.position_type == PositionType.SHORT and not pos.is_closed()]
+        
+        details = "持仓明细:\n"
+        if long_positions:
+            details += "多头:\n"
+            for i, pos in enumerate(long_positions, 1):
+                details += f"  {i}. 开仓价: {pos.entry_price:.2f}, 开仓时间: {pos.entry_time}\n"
+        if short_positions:
+            details += "空头:\n"
+            for i, pos in enumerate(short_positions, 1):
+                details += f"  {i}. 开仓价: {pos.entry_price:.2f}, 开仓时间: {pos.entry_time}\n"
+        return details
+
 
 class LLMDealer:
     def __init__(self, llm_client, symbol: str, data_provider: MainContractProvider,
@@ -22,6 +100,7 @@ class LLMDealer:
                  max_position: int = 5):
         self.llm_client = llm_client
         self.symbol = symbol
+        self.night_closing_time = self._get_night_closing_time()
         self.data_provider = data_provider
         self.max_daily_bars = max_daily_bars
         self.max_hourly_bars = max_hourly_bars
@@ -38,7 +117,10 @@ class LLMDealer:
         self.position = 0  # 当前持仓量，正数表示多头，负数表示空头
         self.current_date = None
         self.last_trade_date = None  # 添加这个属性
-        
+
+        self.position_manager = TradePositionManager()
+        self.total_profit = 0
+
         self.trading_hours = [
             (dt_time(9, 0), dt_time(11, 30)),
             (dt_time(13, 0), dt_time(15, 0)),
@@ -49,13 +131,19 @@ class LLMDealer:
         self.logger = logging.getLogger(__name__)
         self.timezone = pytz.timezone('Asia/Shanghai') 
 
+    def _get_night_closing_time(self) -> Optional[dt_time]:
+        night_end = get_trading_end_time(self.symbol, 'night')
+        if isinstance(night_end, str) and ':' in night_end:
+            hour, minute = map(int, night_end.split(':'))
+            return dt_time(hour, minute)
+        return None
+    
     def _is_trading_time(self, dt: datetime) -> bool:
         t = dt.time()
         for start, end in self.trading_hours:
             if start <= t <= end:
                 return True
         return False
-
 
     def _filter_trading_data(self, df: pd.DataFrame) -> pd.DataFrame:
         def is_trading_time(dt):
@@ -88,7 +176,6 @@ class LLMDealer:
             self.logger.info(f"Filtered data: {len(filtered_data)} rows")
 
         return filtered_data
-
     
     def _validate_and_prepare_data(self, df: pd.DataFrame, date: str) -> pd.DataFrame:
         original_len = len(df)
@@ -282,7 +369,38 @@ class LLMDealer:
         
         open_interest = bar.get('hold', 'N/A')
     
+        position_description = "空仓"
+        if self.position > 0:
+            position_description = f"多头 {self.position} 手"
+        elif self.position < 0:
+            position_description = f"空头 {abs(self.position)} 手"
+            
+        profits = self.position_manager.calculate_profits(bar['close'])
+
+        profit_info = f"""
+        实际盈亏: {profits['realized_profit']:.2f}
+        浮动盈亏: {profits['unrealized_profit']:.2f}
+        总盈亏: {profits['total_profit']:.2f}
+        """
+
+        position_details = self.position_manager.get_position_details()
+
+        news_section = ""
+        if news and news.strip():
+            news_section = f"""
+            最新新闻:
+            {news}
+
+            新闻分析提示：
+            1. 请考虑这条新闻可能对市场造成的短期（当日内）、中期（数日到数周）和长期（数月以上）影响。
+            2. 注意市场可能已经提前消化了这个消息，价格可能已经反映了这个信息。
+            3. 评估这个新闻是否与之前的市场预期一致，如果有出入，可能会造成更大的市场反应。
+            4. 考虑这个新闻可能如何影响市场情绪和交易者的行为。
+            5. 这条消息只会出现以此，如果有值得记录的信息，需要保留在 next_message 中
+            """
+
         input_template = f"""
+        你时候一位经验老道的交易员，不放弃每个机会，也随时警惕风险。你认真思考，审视数据，做出交易决策。
         上一次的消息: {self.last_msg}
         当前 bar index: {len(self.today_minute_bars) - 1}
 
@@ -307,21 +425,30 @@ class LLMDealer:
         技术指标:
         {self._format_indicators(latest_indicators)}
 
-        最新新闻:
-        {news[:200]}...  
+         {news_section}
 
-        当前持仓: {self.position}
-        最大持仓: {self.max_position}
+        当前持仓状态: {position_description}
+        最大持仓: {self.max_position} 手
+
+        盈亏情况:
+        {profit_info}
+
+        {position_details}
 
         请注意：
         1. 日内仓位需要在每天15:00之前平仓。
         2. 当前时间为 {bar['datetime'].strftime('%H:%M')}，请根据时间决定是否需要平仓。
-        3. 开仓时可以指定开仓手数或全开（使用 'all'），不指定则默认为1手。
-        4. 平仓时可以指定平仓手数或全平（使用 'all'），不指定则默认为1手。
+        3. 开仓指令格式：
+           - 买入：'buy 数量'（例如：'buy 2' 或 'buy all'）
+           - 卖空：'short 数量'（例如：'short 2' 或 'short all'）
+        4. 平仓指令格式：
+           - 卖出平多：'sell 数量'（例如：'sell 2' 或 'sell all'）
+           - 买入平空：'cover 数量'（例如：'cover 2' 或 'cover all'）
+        5. 当前持仓已经达到最大值或最小值时，请勿继续开仓。
 
-        请根据以上信息，给出交易指令（buy/sell/short/cover）或不交易（hold），并提供下一次需要的消息。
+        请根据以上信息，给出交易指令或选择不交易（hold），并提供下一次需要的消息。
         请以JSON格式输出，包含以下字段：
-        - trade_instruction: 交易指令（字符串，格式为 "指令 数量"，如 "buy 2" 或 "sell all"）
+        - trade_instruction: 交易指令（字符串，例如 "buy 2", "sell all", "short 1", "cover all" 或 "hold"）
         - next_message: 下一次需要的消息（字符串）
 
         请确保输出的JSON格式正确，并用```json 和 ``` 包裹。
@@ -374,51 +501,74 @@ class LLMDealer:
             return "hold", 1, ""
 
     def _execute_trade(self, trade_instruction: str, quantity: Union[int, str], bar: pd.Series):
-        """执行交易指令，并在必要时强制平仓"""
         current_datetime = bar['datetime']
         current_date = current_datetime.date()
-        current_time = current_datetime.time()
+        current_price = bar['close']
 
-        # 如果是新的交易日，重置仓位
         if self.last_trade_date != current_date:
-            self.position = 0
+            self._close_all_positions(current_price, current_datetime)
             self.last_trade_date = current_date
 
-        # 计算实际交易数量
-        if quantity == 'all':
-            if trade_instruction in ['buy', 'short']:
-                actual_quantity = self.max_position - abs(self.position)
-            else:  # 'sell' or 'cover'
-                actual_quantity = abs(self.position)
+        if trade_instruction.lower() == 'hold':
+            logging.info("Hold position, no trade executed.")
+            return
+
+        # 修复这里：直接使用传入的 trade_instruction 和 quantity
+        action = trade_instruction.lower()
+        qty = self.max_position if quantity == 'all' else int(quantity)
+
+        current_position = self.position_manager.get_current_position()
+
+        if action == "buy":
+            max_buy = self.max_position - current_position
+            actual_quantity = min(qty, max_buy)
+            self.position_manager.open_position(current_price, actual_quantity, True, current_datetime)
+        elif action == "sell":
+            actual_quantity = self.position_manager.close_positions(current_price, qty, True, current_datetime)
+        elif action == "short":
+            max_short = self.max_position + current_position
+            actual_quantity = min(qty, max_short)
+            self.position_manager.open_position(current_price, actual_quantity, False, current_datetime)
+        elif action == "cover":
+            actual_quantity = self.position_manager.close_positions(current_price, qty, False, current_datetime)
         else:
-            actual_quantity = min(quantity, self.max_position - abs(self.position))
+            logging.error(f"Unknown trade action: {action}")
+            return
 
-        # 执行交易指令
-        if trade_instruction == "buy":
-            self.position = min(self.position + actual_quantity, self.max_position)
-        elif trade_instruction == "sell":
-            self.position = max(self.position - actual_quantity, -self.max_position)
-        elif trade_instruction == "short":
-            self.position = max(self.position - actual_quantity, -self.max_position)
-        elif trade_instruction == "cover":
-            self.position = min(self.position + actual_quantity, self.max_position)
+        self._force_close_if_needed(current_datetime, current_price)
 
-        # 强制平仓逻辑
-        closing_time = dt_time(14, 55)
+        profits = self.position_manager.calculate_profits(current_price)
+        self.total_profit = profits['total_profit']
+
+        logging.info(f"执行交易后的仓位: {self.position_manager.get_current_position()}")
+        logging.info(f"当前总盈亏: {self.total_profit:.2f}")
+        logging.info(self.position_manager.get_position_details())
+
+    def _close_all_positions(self, current_price: float, current_datetime: pd.Timestamp):
+        self.position_manager.close_positions(current_price, float('inf'), True, current_datetime)
+        self.position_manager.close_positions(current_price, float('inf'), False, current_datetime)
+
+    def _force_close_if_needed(self, current_datetime: pd.Timestamp, current_price: float):
+        day_closing_time = dt_time(14, 55)
         night_session_start = dt_time(21, 0)
-        night_session_end = dt_time(2, 30)
 
+        current_time = current_datetime.time()
         is_day_session = current_time < night_session_start and current_time >= dt_time(9, 0)
-        is_night_session = current_time >= night_session_start or current_time < night_session_end
+        is_night_session = current_time >= night_session_start or current_time < dt_time(9, 0)
 
-        if is_day_session and current_time >= closing_time:
-            if self.position != 0:
-                logging.info(f"日盘强制平仓：从 {self.position} 到 0")
-                self.position = 0
-        elif is_night_session:
-            logging.info(f"夜盘交易，当前仓位：{self.position}")
-
-        logging.info(f"执行交易后的仓位: {self.position}")
+        if is_day_session and current_time >= day_closing_time:
+            self._close_all_positions(current_price, current_datetime)
+            logging.info("日盘强制平仓")
+        elif is_night_session and self.night_closing_time:
+            # Check if it's within 5 minutes of the night closing time
+            closing_window_start = (datetime.combine(datetime.min, self.night_closing_time) - timedelta(minutes=5)).time()
+            if closing_window_start <= current_time <= self.night_closing_time:
+                self._close_all_positions(current_price, current_datetime)
+                logging.info("夜盘强制平仓")
+            else:
+                logging.info(f"夜盘交易，当前仓位：{self.position_manager.get_current_position()}")
+        elif is_night_session and not self.night_closing_time:
+            logging.info(f"夜盘交易（无强制平仓时间），当前仓位：{self.position_manager.get_current_position()}")
 
     def _get_today_bar_index(self, timestamp: pd.Timestamp) -> int:
         """
@@ -494,20 +644,32 @@ class LLMDealer:
                         return x
                 else:
                     return str(x)
+                
+            profits = self.position_manager.calculate_profits(bar['close'])
+            profit_info = f"""
+            实际盈亏: {profits['realized_profit']:.2f}
+            浮动盈亏: {profits['unrealized_profit']:.2f}
+            总盈亏: {profits['total_profit']:.2f}
+            """
+
+            position_details = self.position_manager.get_position_details()
+            news_info = f"新闻: {news[:200]}..." if news and news.strip() else "无新闻数据"
 
             log_msg = f"""
             时间: {datetime}, Bar Index: {self._get_today_bar_index(datetime) if isinstance(datetime, pd.Timestamp) else 'N/A'}
             价格: 开 {format_price(open_price)}, 高 {format_price(high_price)}, 低 {format_price(low_price)}, 收 {format_price(close_price)}
             成交量: {volume}, 持仓量: {open_interest}
-            新闻: {news[:100]}...  # 截取前100个字符
+            {news_info}
             交易指令: {trade_instruction}
-            当前持仓: {self.position}
+            当前持仓: {self.position_manager.get_current_position()}
+            {profit_info}
+            {position_details}
             """
             logging.info(log_msg)
         except Exception as e:
             logging.error(f"Error in _log_bar_info: {str(e)}", exc_info=True)
     
-    def process_bar(self, bar: pd.Series, news: str = "") -> Tuple[str, str]:
+    def process_bar(self, bar: pd.Series, news: str = "") -> Tuple[str, Union[int, str], str]:
         try:
             bar['datetime'] = pd.to_datetime(bar['datetime'])
             bar_date = bar['datetime'].date()
@@ -519,7 +681,7 @@ class LLMDealer:
                 self.last_trade_date = bar_date
 
             if not self._is_trading_time(bar['datetime']):
-                return "hold", ""
+                return "hold", 0, ""  # 返回数量为0，表示不交易
 
             # Update today_minute_bars only if it's a trading time
             self.today_minute_bars = pd.concat([self.today_minute_bars, bar.to_frame().T], ignore_index=True)
@@ -533,4 +695,4 @@ class LLMDealer:
             return trade_instruction, quantity, next_msg
         except Exception as e:
             logging.error(f"Error processing bar: {str(e)}")
-            return "hold", 1, ""
+            return "hold", 0, ""  # 错误情况下也返回数量为0

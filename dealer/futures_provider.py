@@ -4,7 +4,7 @@ import hashlib
 import random
 import re
 import time
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 import akshare as ak
 import pandas as pd
 import requests
@@ -161,6 +161,10 @@ class MainContractProvider:
             symbol = symbol[:-1]
         
         return rq.futures.get_dominant_price(symbol, start_date, end_date, frequency, adjust_type=adjust_type)
+    
+    def get_trade_calendar(self, start,end) -> List[datetime.date]:
+        return rq.get_trading_dates(start,end)
+    
 
 def curl_to_python_code(curl_command: str) -> str:
     # Extract URL

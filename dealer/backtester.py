@@ -1,7 +1,7 @@
 import logging
 import time
 import pandas as pd
-from typing import List, Tuple
+from typing import List, Tuple, Union
 from datetime import datetime, timedelta
 
 from tqdm import tqdm
@@ -9,78 +9,79 @@ from dealer.futures_provider import MainContractProvider
 from dealer.llm_dealer import LLMDealer
 
 class Backtester:
-    def __init__(self, symbol: str, start_date: str, end_date: str, llm_client, data_provider: MainContractProvider,compact_mode: bool = False):
+    def __init__(self, symbol: str, start_date: str, end_date: str, llm_client, data_provider: MainContractProvider,
+                 compact_mode=False,
+                  max_position: int = 5):
         self.symbol = symbol
         self.start_date = datetime.strptime(start_date, '%Y-%m-%d')
         self.end_date = datetime.strptime(end_date, '%Y-%m-%d')
         self.llm_client = llm_client
         self.data_provider = data_provider
+        self.max_position = max_position  # 添加 max_position 属性
         self.compact_mode = compact_mode
         
-        self.trades: List[Tuple[str, float, datetime]] = []  # (action, price, timestamp)
+        self.trades: List[Tuple[str, int, float, datetime]] = []  # (action, quantity, price, timestamp)
         self.open_trades = 0
         self.close_trades = 0
         self.profit_loss = 0
+        self.position = 0
+        self.max_position = max_position 
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
 
     def run_backtest(self):
         total_days = (self.end_date - self.start_date).days + 1
         current_date = self.start_date
-        start_time = time.time()
 
         with tqdm(total=total_days, desc="Overall Progress") as pbar:
             while current_date <= self.end_date:
-                self.logger.info(f"Processing date: {current_date.strftime('%Y-%m-%d')}")
+                print(f"\nProcessing trading date: {current_date.strftime('%Y-%m-%d')}")
                 
-                # Initialize LLMDealer for the current day
                 dealer = LLMDealer(self.llm_client, self.symbol, self.data_provider, 
                                    backtest_date=current_date.strftime('%Y-%m-%d'),
-                                   compact_mode=self.compact_mode)
+                                   max_position=self.max_position)
                 
-                # Get filtered minute data for the current day
-                minute_data = dealer._get_today_data(current_date)
+                # Get data for the current trading day (including previous night session)
+                trading_day_data = self.data_provider.get_bar_data(self.symbol, '1', current_date.strftime('%Y-%m-%d'))
                 
-                if minute_data.empty:
-                    self.logger.warning(f"No data available for {current_date.strftime('%Y-%m-%d')}. Skipping this date.")
+                # Filter data to include only the current trading day and after the start_date
+                filtered_data = trading_day_data[
+                    (trading_day_data['trading_date'] == current_date) & 
+                    (trading_day_data['datetime'] >= self.start_date)
+                ]
+
+                if filtered_data.empty:
+                    print(f"No data available for trading date {current_date.strftime('%Y-%m-%d')}")
                 else:
-                    self.logger.info(f"Processing {len(minute_data)} bars for {current_date.strftime('%Y-%m-%d')}")
-                    # Process each bar in the filtered data
-                    for i, (_, bar) in enumerate(minute_data.iterrows(), 1):
-                        trade_instruction, _ = dealer.process_bar(bar)
-                        self._record_trade(trade_instruction, bar['close'], bar['datetime'])
+                    for i, (_, bar) in enumerate(filtered_data.iterrows(), 1):
+                        trade_instruction, quantity, _ = dealer.process_bar(bar)
+                        self._record_trade(trade_instruction, quantity, bar['close'], bar['datetime'])
                         
-                        # Display progress every 50 bars
                         if i % 50 == 0:
-                            self.logger.info(f"Processed {i}/{len(minute_data)} bars for {current_date.strftime('%Y-%m-%d')}")
-                
+                            print(f"Processed {i}/{len(filtered_data)} bars for trading date {current_date.strftime('%Y-%m-%d')}")
+
                 current_date += timedelta(days=1)
                 pbar.update(1)
-                
-                # Estimate remaining time
-                elapsed_time = time.time() - start_time
-                days_processed = (current_date - self.start_date).days
-                if days_processed > 0:
-                    avg_time_per_day = elapsed_time / days_processed
-                    remaining_days = total_days - days_processed
-                    estimated_time_left = remaining_days * avg_time_per_day
-                    self.logger.info(f"Estimated time remaining: {timedelta(seconds=int(estimated_time_left))}")
 
         self._calculate_performance()
-        self.logger.info("Backtest completed!")
+        print("\nBacktest completed!")
 
-    def _record_trade(self, instruction: str, price: float, timestamp: datetime):
+
+
+    def _record_trade(self, instruction: str, quantity: Union[int, str], price: float, timestamp: datetime):
         if instruction in ['buy', 'short']:
-            self.trades.append((instruction, price, timestamp))
+            actual_quantity = self.max_position - abs(self.position) if quantity == 'all' else min(int(quantity), self.max_position - abs(self.position))
+            self.trades.append((instruction, actual_quantity, price, timestamp))
             self.open_trades += 1
+            self.position += actual_quantity if instruction == 'buy' else -actual_quantity
         elif instruction in ['sell', 'cover']:
-            if self.trades:
-                last_trade = self.trades[-1]
-                if (instruction == 'sell' and last_trade[0] == 'buy') or (instruction == 'cover' and last_trade[0] == 'short'):
-                    pl = (price - last_trade[1]) * (1 if last_trade[0] == 'buy' else -1)
-                    self.profit_loss += pl
-                    self.trades.append((instruction, price, timestamp))
-                    self.close_trades += 1
+            actual_quantity = abs(self.position) if quantity == 'all' else min(int(quantity), abs(self.position))
+            if self.position != 0:
+                pl = (price - self.trades[-1][2]) * actual_quantity * (1 if self.position > 0 else -1)
+                self.profit_loss += pl
+                self.trades.append((instruction, actual_quantity, price, timestamp))
+                self.close_trades += 1
+                self.position += actual_quantity if instruction == 'cover' else -actual_quantity
 
     def _calculate_performance(self):
         print(f"回测结果 ({self.start_date.strftime('%Y-%m-%d')} 到 {self.end_date.strftime('%Y-%m-%d')}):")
@@ -97,7 +98,7 @@ class Backtester:
             print(f"平均每笔交易盈亏: {avg_profit:.2f}")
 
     def get_trade_history(self) -> pd.DataFrame:
-        return pd.DataFrame(self.trades, columns=['Action', 'Price', 'Timestamp'])
+        return pd.DataFrame(self.trades, columns=['Action', 'Quantity', 'Price', 'Timestamp'])
 
 # 使用示例
 if __name__ == "__main__":
