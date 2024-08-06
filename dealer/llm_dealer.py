@@ -98,10 +98,14 @@ class LLMDealer:
                  max_daily_bars: int = 30, max_hourly_bars: int = 12, max_minute_bars: int = 60,
                  backtest_date: Optional[str] = None, compact_mode: bool = False,
                  max_position: int = 5):
-        self.llm_client = llm_client
         self.symbol = symbol
         self.night_closing_time = self._get_night_closing_time()
+        self.backtest_date = backtest_date
         self.data_provider = data_provider
+        self.llm_client = llm_client
+        self.last_news_time = None
+        self.news_summary = ""
+        self.is_backtest = backtest_date is not None
         self.max_daily_bars = max_daily_bars
         self.max_hourly_bars = max_hourly_bars
         self.max_minute_bars = max_minute_bars
@@ -131,13 +135,45 @@ class LLMDealer:
         self.logger = logging.getLogger(__name__)
         self.timezone = pytz.timezone('Asia/Shanghai') 
 
+    def _get_latest_news(self):
+        if self.is_backtest:
+            return pd.DataFrame()  # 回测模式下不读取新闻
+        news_df = self.data_provider.get_futures_news(self.symbol, page_num=0, page_size=20)
+        if news_df is not None and not news_df.empty:
+            return news_df.sort_values('publish_time', ascending=False)
+        return pd.DataFrame()
+
+    def _summarize_news(self, news_df):
+        if news_df.empty:
+            return ""
+
+        news_text = "\n".join(f"- {row['title']}" for _, row in news_df.iterrows())
+        prompt = f"请将以下新闻整理成不超过200字的今日交易提示简报：\n\n{news_text}"
+        
+        summary = self.llm_client.one_chat(prompt)
+        return summary[:200]  # Ensure the summary doesn't exceed 200 characters
+
     def _get_night_closing_time(self) -> Optional[dt_time]:
         night_end = get_trading_end_time(self.symbol, 'night')
         if isinstance(night_end, str) and ':' in night_end:
             hour, minute = map(int, night_end.split(':'))
             return dt_time(hour, minute)
         return None
-    
+
+    def _update_news(self, current_datetime):
+        if self.is_backtest:
+            return False  # 回测模式下不更新新闻
+        news_df = self._get_latest_news()
+        if not news_df.empty:
+            latest_news_time = pd.to_datetime(news_df['publish_time'].iloc[0])
+            if self.last_news_time is None or latest_news_time > self.last_news_time:
+                self.last_news_time = latest_news_time
+                new_summary = self._summarize_news(news_df)
+                if new_summary != self.news_summary:
+                    self.news_summary = new_summary
+                    return True
+        return False
+       
     def _is_trading_time(self, dt: datetime) -> bool:
         t = dt.time()
         for start, end in self.trading_hours:
@@ -679,20 +715,32 @@ class LLMDealer:
                 self.today_minute_bars = self._get_today_data(bar_date)
                 self.position = 0
                 self.last_trade_date = bar_date
+                
+                if not self.is_backtest:
+                    # Reset news data for the new day in non-backtest mode
+                    self.last_news_time = None
+                    self.news_summary = ""
 
             if not self._is_trading_time(bar['datetime']):
-                return "hold", 0, ""  # 返回数量为0，表示不交易
+                return "hold", 0, ""
 
-            # Update today_minute_bars only if it's a trading time
+            # Update today_minute_bars
             self.today_minute_bars = pd.concat([self.today_minute_bars, bar.to_frame().T], ignore_index=True)
 
-            llm_input = self._prepare_llm_input(bar, news)
+            # Check for news updates in non-backtest mode
+            news_updated = False
+            if not self.is_backtest:
+                news_updated = self._update_news(bar['datetime'])
+
+            # Prepare LLM input
+            llm_input = self._prepare_llm_input(bar, self.news_summary if (not self.is_backtest and (news_updated or len(self.today_minute_bars) == 1)) else "")
+            
             llm_response = self.llm_client.one_chat(llm_input)
             trade_instruction, quantity, next_msg = self._parse_llm_output(llm_response)
             self._execute_trade(trade_instruction, quantity, bar)
-            self._log_bar_info(bar, news, f"{trade_instruction} {quantity}")
+            self._log_bar_info(bar, self.news_summary if news_updated else "", f"{trade_instruction} {quantity}")
             self.last_msg = next_msg
             return trade_instruction, quantity, next_msg
         except Exception as e:
             logging.error(f"Error processing bar: {str(e)}")
-            return "hold", 0, ""  # 错误情况下也返回数量为0
+            return "hold", 0, ""
