@@ -67,8 +67,6 @@ class LLMDealer:
         self.logger.debug(f"Trading hours filter: {len(df)} -> {len(filtered_df)} rows")
         return filtered_df
 
-
-
     def _get_today_data(self, date: datetime.date) -> pd.DataFrame:
         self.logger.info(f"Fetching data for date: {date}")
 
@@ -150,26 +148,31 @@ class LLMDealer:
         return df
 
     def _format_indicators(self, indicators: pd.Series) -> str:
+        def format_value(value):
+            if isinstance(value, (int, float)):
+                return f"{value:.2f}"
+            return str(value)
+
         if self.compact_mode:
             return f"""
-            SMA10: {indicators.get('sma_10', 'N/A'):.2f}
-            EMA20: {indicators.get('ema_20', 'N/A'):.2f}
-            RSI: {indicators.get('rsi', 'N/A'):.2f}
-            MACD: {indicators.get('macd', 'N/A'):.2f}
-            BB高: {indicators.get('bollinger_high', 'N/A'):.2f}
-            BB低: {indicators.get('bollinger_low', 'N/A'):.2f}
+            SMA10: {format_value(indicators.get('sma_10', 'N/A'))}
+            EMA20: {format_value(indicators.get('ema_20', 'N/A'))}
+            RSI: {format_value(indicators.get('rsi', 'N/A'))}
+            MACD: {format_value(indicators.get('macd', 'N/A'))}
+            BB高: {format_value(indicators.get('bollinger_high', 'N/A'))}
+            BB低: {format_value(indicators.get('bollinger_low', 'N/A'))}
             """
         else:
             return f"""
-            10周期简单移动平均线 (SMA): {indicators.get('sma_10', 'N/A'):.2f}
-            20周期指数移动平均线 (EMA): {indicators.get('ema_20', 'N/A'):.2f}
-            相对强弱指标 (RSI): {indicators.get('rsi', 'N/A'):.2f}
-            MACD: {indicators.get('macd', 'N/A'):.2f}
-            MACD信号线: {indicators.get('macd_signal', 'N/A'):.2f}
-            平均真实范围 (ATR): {indicators.get('atr', 'N/A'):.2f}
-            布林带上轨: {indicators.get('bollinger_high', 'N/A'):.2f}
-            布林带中轨: {indicators.get('bollinger_mid', 'N/A'):.2f}
-            布林带下轨: {indicators.get('bollinger_low', 'N/A'):.2f}
+            10周期简单移动平均线 (SMA): {format_value(indicators.get('sma_10', 'N/A'))}
+            20周期指数移动平均线 (EMA): {format_value(indicators.get('ema_20', 'N/A'))}
+            相对强弱指标 (RSI): {format_value(indicators.get('rsi', 'N/A'))}
+            MACD: {format_value(indicators.get('macd', 'N/A'))}
+            MACD信号线: {format_value(indicators.get('macd_signal', 'N/A'))}
+            平均真实范围 (ATR): {format_value(indicators.get('atr', 'N/A'))}
+            布林带上轨: {format_value(indicators.get('bollinger_high', 'N/A'))}
+            布林带中轨: {format_value(indicators.get('bollinger_mid', 'N/A'))}
+            布林带下轨: {format_value(indicators.get('bollinger_low', 'N/A'))}
             """
         
     def _initialize_history(self, period: Literal['1', '5', '15', '30', '60', 'D']) -> pd.DataFrame:
@@ -364,8 +367,9 @@ class LLMDealer:
 
     def _execute_trade(self, trade_instruction: str, bar: pd.Series):
         """执行交易指令，并在必要时强制平仓"""
-        current_date = bar['datetime'].date()
-        current_time = bar['datetime'].time()
+        current_datetime = bar['datetime']
+        current_date = current_datetime.date()
+        current_time = current_datetime.time()
 
         # 如果是新的交易日，重置仓位
         if self.last_trade_date != current_date:
@@ -384,13 +388,21 @@ class LLMDealer:
 
         # 强制平仓逻辑
         closing_time = dt_time(14, 55)
-        if current_time >= closing_time:  # 在14:55或之后
-            if self.position > 0:
-                logging.info(f"强制平多仓：{self.position}")
+        night_session_start = dt_time(21, 0)
+        night_session_end = dt_time(2, 30)
+
+        is_day_session = current_time < night_session_start and current_time >= dt_time(9, 0)
+        is_night_session = current_time >= night_session_start or current_time < night_session_end
+
+        if is_day_session and current_time >= closing_time:
+            if self.position != 0:
+                logging.info(f"日盘强制平仓：从 {self.position} 到 0")
                 self.position = 0
-            elif self.position < 0:
-                logging.info(f"强制平空仓：{self.position}")
-                self.position = 0
+        elif is_night_session:
+            # 夜盘不强制平仓，但可以记录仓位
+            logging.info(f"夜盘交易，当前仓位：{self.position}")
+
+        logging.info(f"执行交易后的仓位: {self.position}")
 
     def _get_today_bar_index(self, timestamp: pd.Timestamp) -> int:
         """
@@ -455,8 +467,17 @@ class LLMDealer:
             volume = bar.get('volume', 'N/A')
             open_interest = bar.get('open_interest', bar.get('hold', 'N/A'))
 
-            # 格式化价格，如果是数值的话
-            format_price = lambda x: f"{x:.2f}" if isinstance(x, (int, float)) else x
+            # 修改格式化函数来处理字符串和数值
+            def format_price(x):
+                if isinstance(x, (int, float)):
+                    return f"{x:.2f}"
+                elif isinstance(x, str):
+                    try:
+                        return f"{float(x):.2f}"
+                    except ValueError:
+                        return x
+                else:
+                    return str(x)
 
             log_msg = f"""
             时间: {datetime}, Bar Index: {self._get_today_bar_index(datetime) if isinstance(datetime, pd.Timestamp) else 'N/A'}
