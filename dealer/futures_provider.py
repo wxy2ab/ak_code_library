@@ -46,7 +46,7 @@ class MainContractProvider:
         else:
             start_date = end_date - timedelta(days=5)  # 获取5天的分钟数据
         
-        frequency_map = {'1': '1m', '5': '5m', '15': '15m', '30': '30m', '60': '1h', 'D': '1d'}
+        frequency_map = {'1': '1m', '5': '5m', '15': '15m', '30': '30m', '60': '60m', 'D': '1d'}
         frequency = frequency_map[period]
         
         code = self.code_getter[name]
@@ -60,9 +60,9 @@ class MainContractProvider:
             df = df.rename(columns={'datetime': 'datetime', 'open': 'open', 'high': 'high', 'low': 'low', 'close': 'close', 'volume': 'volume', 'open_interest': 'hold'})
         else:
             df = df.reset_index()
-            df['date'] = df['datetime'].dt.date
+            #df['date'] = df['datetime'].dt.date
             df = df.rename(columns={'date': 'date', 'open': 'open', 'high': 'high', 'low': 'low', 'close': 'close', 'volume': 'volume', 'open_interest': 'hold'})
-            df = df.drop(columns=['datetime'])
+            #df = df.drop(columns=['datetime'])
         
         return df
 

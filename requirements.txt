@@ -30,4 +30,4 @@ tushare
 fuzzywuzzy
 rapidfuzz
 python-Levenshtein
-pandas_ta
+ta

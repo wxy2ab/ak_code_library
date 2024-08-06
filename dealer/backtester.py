@@ -8,12 +8,13 @@ from dealer.futures_provider import MainContractProvider
 from dealer.llm_dealer import LLMDealer
 
 class Backtester:
-    def __init__(self, symbol: str, start_date: str, end_date: str, llm_client, data_provider: MainContractProvider):
+    def __init__(self, symbol: str, start_date: str, end_date: str, llm_client, data_provider: MainContractProvider,compact_mode: bool = False):
         self.symbol = symbol
         self.start_date = datetime.strptime(start_date, '%Y-%m-%d')
         self.end_date = datetime.strptime(end_date, '%Y-%m-%d')
         self.llm_client = llm_client
         self.data_provider = data_provider
+        self.compact_mode = compact_mode
         
         self.trades: List[Tuple[str, float, datetime]] = []  # (action, price, timestamp)
         self.open_trades = 0
@@ -29,25 +30,27 @@ class Backtester:
             while current_date <= self.end_date:
                 print(f"\nProcessing date: {current_date.strftime('%Y-%m-%d')}")
                 
-                # 初始化当天的 LLMDealer
-                dealer = LLMDealer(self.llm_client, self.symbol, self.data_provider, backtest_date=current_date.strftime('%Y-%m-%d'))
+                # Initialize LLMDealer for the current day with compact_mode
+                dealer = LLMDealer(self.llm_client, self.symbol, self.data_provider, 
+                                   backtest_date=current_date.strftime('%Y-%m-%d'),
+                                   compact_mode=self.compact_mode)
                 
-                # 获取当天的分钟线数据
-                minute_data = self.data_provider.get_bar_data(self.symbol, '1', current_date.strftime('%Y-%m-%d'))
+                # Get filtered minute data for the current day
+                minute_data = dealer._get_today_data(current_date)
                 
-                # 按时间顺序处理每个分钟的数据
+                # Process each bar in the filtered data
                 for i, (_, bar) in enumerate(minute_data.iterrows(), 1):
                     trade_instruction, _ = dealer.process_bar(bar)
                     self._record_trade(trade_instruction, bar['close'], bar['datetime'])
                     
-                    # 每处理50个bar显示一次进度
+                    # Display progress every 50 bars
                     if i % 50 == 0:
                         print(f"Processed {i}/{len(minute_data)} bars for {current_date.strftime('%Y-%m-%d')}")
                 
                 current_date += timedelta(days=1)
                 pbar.update(1)
                 
-                # 估计剩余时间
+                # Estimate remaining time
                 elapsed_time = time.time() - start_time
                 days_processed = (current_date - self.start_date).days
                 if days_processed > 0:

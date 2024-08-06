@@ -16,7 +16,7 @@ def test():
 
     llm_client = factory.get_instance("MiniMaxClient")
     
-    backtester = Backtester(symbol, start_date, end_date, llm_client, data_provider)
+    backtester = Backtester(symbol, start_date, end_date, llm_client, data_provider,compact_mode=True)
     backtester.run_backtest()
     
     # 获取详细的交易历史
@@ -25,7 +25,8 @@ def test():
 
 def test1():
     data_provider = MainContractProvider()
-    df=data_provider.get_rqbar("SC", "2024-06-01", "2024-06-02", "1d")
+    df=data_provider.get_bar_data("SC","D", "2024-06-01")
+
     print(df)
 
 def main():
