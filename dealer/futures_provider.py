@@ -165,6 +165,10 @@ class MainContractProvider:
     def get_trade_calendar(self, start,end) -> List[datetime.date]:
         return rq.get_trading_dates(start,end)
     
+    def get_main_contract(self,code:str)->str:
+        code = code[:-1] if code.endswith('0') else code
+        codelist:pd.Series = rq.get_dominant(code)
+        return codelist.iloc[0]
 
 def curl_to_python_code(curl_command: str) -> str:
     # Extract URL
