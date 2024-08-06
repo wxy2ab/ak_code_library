@@ -98,7 +98,7 @@ class LLMDealer:
     def __init__(self, llm_client, symbol: str, data_provider: MainContractProvider,
                  max_daily_bars: int = 60, max_hourly_bars: int = 30, max_minute_bars: int = 240,
                  backtest_date: Optional[str] = None, compact_mode: bool = False,
-                 max_position: int = 5):
+                 max_position: int = 1):
         self.symbol = symbol
         self.night_closing_time = self._get_night_closing_time()
         self.backtest_date = backtest_date
@@ -136,6 +136,7 @@ class LLMDealer:
         self.logger = logging.getLogger(__name__)
         self.timezone = pytz.timezone('Asia/Shanghai') 
         self._setup_logging()
+
     def _setup_logging(self):
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.DEBUG)
@@ -453,6 +454,9 @@ class LLMDealer:
 
         input_template = f"""
         你时候一位经验老道的期货交易员，熟悉期货规律，掌握交易中获利的技巧。不放弃每个机会，也随时警惕风险。你认真思考，审视数据，做出交易决策。
+        今天执行的日内交易策略。所有开仓都需要在当天收盘前平仓，不留过夜仓位。你看到数据的周期是：1分钟
+        注意：历史信息不会保留，如果有留给后续使用的信息，需要记录在 next_message 中。
+
         上一次的消息: {self.last_msg}
         当前 bar index: {len(self.today_minute_bars) - 1}
 
