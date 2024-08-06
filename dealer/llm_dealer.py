@@ -2,6 +2,7 @@ import json
 import time
 import numpy as np
 import pandas as pd
+import pytz
 from ta import add_all_ta_features
 from ta.trend import SMAIndicator, EMAIndicator
 from ta.momentum import RSIIndicator
@@ -43,6 +44,9 @@ class LLMDealer:
             (dt_time(21, 0), dt_time(23, 59)),
             (dt_time(0, 0), dt_time(2, 30))
         ]
+        logging.basicConfig(level=logging.DEBUG)
+        self.logger = logging.getLogger(__name__)
+        self.timezone = pytz.timezone('Asia/Shanghai') 
 
     def _is_trading_time(self, dt: datetime) -> bool:
         t = dt.time()
@@ -51,13 +55,42 @@ class LLMDealer:
                 return True
         return False
 
+
     def _filter_trading_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        return df[df['datetime'].apply(self._is_trading_time)]
+        def is_trading_time(dt):
+            t = dt.time()
+            return any(start <= t <= end for start, end in self.trading_hours)
+        
+        mask = df['datetime'].apply(is_trading_time)
+        filtered_df = df[mask]
+        
+        self.logger.debug(f"Trading hours filter: {len(df)} -> {len(filtered_df)} rows")
+        return filtered_df
+
+
 
     def _get_today_data(self, date: datetime.date) -> pd.DataFrame:
-        minute_data = self.data_provider.get_bar_data(self.symbol, '1', date.strftime('%Y-%m-%d'))
-        minute_data['datetime'] = pd.to_datetime(minute_data['datetime'])
-        return self._filter_trading_data(minute_data)
+        self.logger.info(f"Fetching data for date: {date}")
+
+        # 获取当天的分钟线数据
+        today_data = self.data_provider.get_bar_data(self.symbol, '1', date.strftime('%Y-%m-%d'))
+        self.logger.info(f"Raw data fetched: {len(today_data)} rows")
+
+        if today_data.empty:
+            self.logger.warning(f"No data returned from data provider for date {date}")
+            return pd.DataFrame()
+
+        # 筛选出交易日期与输入日期一致的数据
+        filtered_data = today_data[today_data['trading_date'] == date]
+
+        if filtered_data.empty:
+            self.logger.warning(f"No data found for date {date} after filtering.")
+        else:
+            self.logger.info(f"Filtered data: {len(filtered_data)} rows")
+
+        return filtered_data
+
+
     
     def _validate_and_prepare_data(self, df: pd.DataFrame, date: str) -> pd.DataFrame:
         original_len = len(df)

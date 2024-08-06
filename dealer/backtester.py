@@ -1,3 +1,4 @@
+import logging
 import time
 import pandas as pd
 from typing import List, Tuple
@@ -20,6 +21,8 @@ class Backtester:
         self.open_trades = 0
         self.close_trades = 0
         self.profit_loss = 0
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(__name__)
 
     def run_backtest(self):
         total_days = (self.end_date - self.start_date).days + 1
@@ -28,9 +31,9 @@ class Backtester:
 
         with tqdm(total=total_days, desc="Overall Progress") as pbar:
             while current_date <= self.end_date:
-                print(f"\nProcessing date: {current_date.strftime('%Y-%m-%d')}")
+                self.logger.info(f"Processing date: {current_date.strftime('%Y-%m-%d')}")
                 
-                # Initialize LLMDealer for the current day with compact_mode
+                # Initialize LLMDealer for the current day
                 dealer = LLMDealer(self.llm_client, self.symbol, self.data_provider, 
                                    backtest_date=current_date.strftime('%Y-%m-%d'),
                                    compact_mode=self.compact_mode)
@@ -38,14 +41,18 @@ class Backtester:
                 # Get filtered minute data for the current day
                 minute_data = dealer._get_today_data(current_date)
                 
-                # Process each bar in the filtered data
-                for i, (_, bar) in enumerate(minute_data.iterrows(), 1):
-                    trade_instruction, _ = dealer.process_bar(bar)
-                    self._record_trade(trade_instruction, bar['close'], bar['datetime'])
-                    
-                    # Display progress every 50 bars
-                    if i % 50 == 0:
-                        print(f"Processed {i}/{len(minute_data)} bars for {current_date.strftime('%Y-%m-%d')}")
+                if minute_data.empty:
+                    self.logger.warning(f"No data available for {current_date.strftime('%Y-%m-%d')}. Skipping this date.")
+                else:
+                    self.logger.info(f"Processing {len(minute_data)} bars for {current_date.strftime('%Y-%m-%d')}")
+                    # Process each bar in the filtered data
+                    for i, (_, bar) in enumerate(minute_data.iterrows(), 1):
+                        trade_instruction, _ = dealer.process_bar(bar)
+                        self._record_trade(trade_instruction, bar['close'], bar['datetime'])
+                        
+                        # Display progress every 50 bars
+                        if i % 50 == 0:
+                            self.logger.info(f"Processed {i}/{len(minute_data)} bars for {current_date.strftime('%Y-%m-%d')}")
                 
                 current_date += timedelta(days=1)
                 pbar.update(1)
@@ -57,10 +64,10 @@ class Backtester:
                     avg_time_per_day = elapsed_time / days_processed
                     remaining_days = total_days - days_processed
                     estimated_time_left = remaining_days * avg_time_per_day
-                    print(f"Estimated time remaining: {timedelta(seconds=int(estimated_time_left))}")
+                    self.logger.info(f"Estimated time remaining: {timedelta(seconds=int(estimated_time_left))}")
 
         self._calculate_performance()
-        print("\nBacktest completed!")
+        self.logger.info("Backtest completed!")
 
     def _record_trade(self, instruction: str, price: float, timestamp: datetime):
         if instruction in ['buy', 'short']:
