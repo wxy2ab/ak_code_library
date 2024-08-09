@@ -12,12 +12,14 @@ from ta.trend import MACD
 from ta.volatility import BollingerBands, AverageTrueRange
 from typing import Dict, List, Tuple, Literal, Optional, Union
 import logging
+from logging import FileHandler
 import re
 from datetime import datetime, timedelta, time as dt_time
 from dealer.trade_time import get_trading_end_time
-
+import pytz
 from dealer.futures_provider import MainContractProvider
-
+# 设置北京时区
+beijing_tz = pytz.timezone('Asia/Shanghai')
 
 class PositionType(Enum):
     LONG = 1
@@ -93,12 +95,13 @@ class TradePositionManager:
                 details += f"  {i}. 开仓价: {pos.entry_price:.2f}, 开仓时间: {pos.entry_time}\n"
         return details
 
-
 class LLMDealer:
-    def __init__(self, llm_client, symbol: str, data_provider: MainContractProvider,
+    def __init__(self, llm_client, symbol: str,data_provider: MainContractProvider,trade_rules:str="" ,
                  max_daily_bars: int = 60, max_hourly_bars: int = 30, max_minute_bars: int = 240,
                  backtest_date: Optional[str] = None, compact_mode: bool = False,
                  max_position: int = 1):
+        self._setup_logging()
+        self.trade_rules = trade_rules
         self.symbol = symbol
         self.night_closing_time = self._get_night_closing_time()
         self.backtest_date = backtest_date
@@ -114,9 +117,6 @@ class LLMDealer:
         self.compact_mode = compact_mode
         self.backtest_date = backtest_date or datetime.now().strftime('%Y-%m-%d')
         
-        self.daily_history = self._initialize_history('D')
-        self.hourly_history = self._initialize_history('60')  
-        self.minute_history = self._initialize_history('1')
         self.today_minute_bars = pd.DataFrame()
         self.last_msg = ""
         self.position = 0  # 当前持仓量，正数表示多头，负数表示空头
@@ -133,16 +133,19 @@ class LLMDealer:
             (dt_time(0, 0), dt_time(2, 30))
         ]
         logging.basicConfig(level=logging.DEBUG)
-        self.logger = logging.getLogger(__name__)
         self.timezone = pytz.timezone('Asia/Shanghai') 
-        self._setup_logging()
+        
+
+        self.daily_history = self._initialize_history('D')
+        self.hourly_history = self._initialize_history('60')  
+        self.minute_history = self._initialize_history('1')
 
     def _setup_logging(self):
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.DEBUG)
 
         # Create a formatter
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s', encoding='utf-8')
 
         # Create a handler for console output
         console_handler = logging.StreamHandler()
@@ -151,6 +154,17 @@ class LLMDealer:
 
         # Add the console handler to the logger
         self.logger.addHandler(console_handler)
+
+        # Ensure the output directory exists
+        os.makedirs('./output', exist_ok=True)
+
+        # Create a file handler
+        file_handler = logging.FileHandler(f'./output/log_{datetime.now().strftime("%Y%m%d")}.log', encoding='utf-8')
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+
+        # Add the file handler to the logger
+        self.logger.addHandler(file_handler)
 
     def _get_latest_news(self):
         if self.is_backtest:
@@ -180,16 +194,44 @@ class LLMDealer:
     def _update_news(self, current_datetime):
         if self.is_backtest:
             return False  # 回测模式下不更新新闻
-        news_df = self._get_latest_news()
-        if not news_df.empty:
-            latest_news_time = pd.to_datetime(news_df['publish_time'].iloc[0])
+
+        try:
+            news_df = self._get_latest_news()
+            if news_df.empty:
+                self.logger.info("No new news available")
+                return False
+
+            # 安全地解析新闻时间
+            def safe_parse_time(time_str):
+                try:
+                    # 假设时间戳是毫秒级的
+                    return pd.to_datetime(int(time_str) / 1000, unit='s', utc=True).tz_convert(beijing_tz)
+                except ValueError:
+                    # 如果失败，尝试直接解析字符串
+                    try:
+                        return pd.to_datetime(time_str).tz_localize(beijing_tz)
+                    except:
+                        self.logger.error(f"Failed to parse news time: {time_str}")
+                        return None
+
+            latest_news_time = safe_parse_time(news_df['publish_time'].iloc[0])
+            
+            if latest_news_time is None:
+                self.logger.warning("Failed to parse latest news time, skipping news update")
+                return False
+
             if self.last_news_time is None or latest_news_time > self.last_news_time:
                 self.last_news_time = latest_news_time
                 new_summary = self._summarize_news(news_df)
                 if new_summary != self.news_summary:
                     self.news_summary = new_summary
+                    self.logger.info(f"Updated news summary: {self.news_summary[:100]}...")
                     return True
-        return False
+
+            return False
+        except Exception as e:
+            self.logger.error(f"Error in _update_news: {str(e)}", exc_info=True)
+            return False
        
     def _is_trading_time(self, dt: datetime) -> bool:
         t = dt.time()
@@ -248,10 +290,10 @@ class LLMDealer:
         df = df[df['datetime'].dt.date == pd.to_datetime(date).date()]
         df = self._filter_trading_data(df)
         
-        logging.info(f"Bars for date {date}: Original: {original_len}, After filtering: {len(df)}")
+        self.logger.info(f"Bars for date {date}: Original: {original_len}, After filtering: {len(df)}")
         
         if len(df) > self.max_minute_bars:
-            logging.warning(f"Unusually high number of bars ({len(df)}) for date {date}. Trimming to {self.max_minute_bars} bars.")
+            self.logger.warning(f"Unusually high number of bars ({len(df)}) for date {date}. Trimming to {self.max_minute_bars} bars.")
             df = df.tail(self.max_minute_bars)
         
         return df
@@ -295,7 +337,7 @@ class LLMDealer:
             
             df['atr'] = AverageTrueRange(high=df['high'], low=df['low'], close=df['close'], window=min(14, len(df))).average_true_range()
         except Exception as e:
-            logging.error(f"Error calculating indicators: {str(e)}")
+            self.logger.error(f"Error calculating indicators: {str(e)}")
         
         return df
 
@@ -337,33 +379,23 @@ class LLMDealer:
             else:
                 df = self.data_provider.get_akbar(self.symbol, frequency)
             
-            if df.empty:
-                raise ValueError(f"No data returned for period {period}")
+            if df is None or df.empty:
+                self.logger.warning(f"No data available for period {period}")
+                return pd.DataFrame(columns=['datetime', 'open', 'high', 'low', 'close', 'volume', 'open_interest'])
             
             df = df.reset_index()
-            
-            # Rename columns to match the expected format
-            df = df.rename(columns={
-                'datetime': 'datetime',
-                'open': 'open',
-                'high': 'high',
-                'low': 'low',
-                'close': 'close',
-                'volume': 'volume',
-                'open_interest': 'hold'
-            })
             
             # Ensure 'datetime' column is datetime type
             df['datetime'] = pd.to_datetime(df['datetime'])
             
             # Select and order the required columns
-            columns_to_keep = ['datetime', 'open', 'high', 'low', 'close', 'volume', 'hold']
+            columns_to_keep = ['datetime', 'open', 'high', 'low', 'close', 'volume', 'open_interest']
             df = df[columns_to_keep]
             
             return self._limit_history(df, period)
         except Exception as e:
-            logging.error(f"Error initializing history for period {period}: {str(e)}")
-            return pd.DataFrame(columns=['datetime', 'open', 'high', 'low', 'close', 'volume', 'hold'])
+            self.logger.error(f"Error initializing history for period {period}: {str(e)}", exc_info=True)
+            return pd.DataFrame(columns=['datetime', 'open', 'high', 'low', 'close', 'volume', 'open_interest'])
 
     def _limit_history(self, df: pd.DataFrame, period: str) -> pd.DataFrame:
         """根据时间周期限制历史数据的长度"""
@@ -477,10 +509,14 @@ class LLMDealer:
             5. 这条消息只会出现以此，如果有值得记录的信息，需要保留在 next_message 中
             """
 
+
+
         input_template = f"""
-        你时候一位经验老道的期货交易员，熟悉期货规律，掌握交易中获利的技巧。不放弃每个机会，也随时警惕风险。你认真思考，审视数据，做出交易决策。
+        你是一位经验老道的期货交易员，熟悉期货规律，掌握交易中获利的技巧。不放弃每个机会，也随时警惕风险。你认真思考，审视数据，做出交易决策。
         今天执行的日内交易策略。所有开仓都需要在当天收盘前平仓，不留过夜仓位。你看到数据的周期是：1分钟
         注意：历史信息不会保留，如果有留给后续使用的信息，需要记录在 next_message 中。
+        
+        {f"交易中注意遵循以下规则:{self.trade_rules}" if self.trade_rules else ""}
 
         上一次的消息: {self.last_msg}
         当前 bar index: {len(self.today_minute_bars) - 1}
@@ -506,7 +542,7 @@ class LLMDealer:
         技术指标:
         {self._format_indicators(latest_indicators)}
 
-         {news_section}
+        {news_section}
 
         当前持仓状态: {position_description}
         最大持仓: {self.max_position} 手
@@ -526,11 +562,15 @@ class LLMDealer:
            - 卖出平多：'sell 数量'（例如：'sell 2' 或 'sell all'）
            - 买入平空：'cover 数量'（例如：'cover 2' 或 'cover all'）
         5. 当前持仓已经达到最大值或最小值时，请勿继续开仓。
+        6. 请提供交易理由和交易计划（包括止损区间和目标价格预测）。
+        7. 即使选择持仓不变（hold），也可以根据最新行情修改交易计划。如果行情变化导致预期发生变化，请更新 trade_plan。
 
         请根据以上信息，给出交易指令或选择不交易（hold），并提供下一次需要的消息。
         请以JSON格式输出，包含以下字段：
         - trade_instruction: 交易指令（字符串，例如 "buy 2", "sell all", "short 1", "cover all" 或 "hold"）
         - next_message: 下一次需要的消息（字符串）
+        - trade_reason: 此刻交易的理由（字符串）
+        - trade_plan: 交易计划，包括止损区间和目标价格预测，可以根据最新行情进行修改（字符串）
 
         请确保输出的JSON格式正确，并用```json 和 ``` 包裹。
         """
@@ -543,7 +583,7 @@ class LLMDealer:
             'hourly': self.hourly_history.to_string(index=False) if not self.hourly_history.empty else "No hourly data available",
         }
 
-    def _parse_llm_output(self, llm_response: str) -> Tuple[str, str]:
+    def _parse_llm_output(self, llm_response: str) -> Tuple[str, Union[int, str], str, str, str]:
         """解析 LLM 的 JSON 输出"""
         try:
             # 提取 JSON 内容
@@ -554,11 +594,11 @@ class LLMDealer:
             json_str = json_match.group(1)
             data = json.loads(json_str)
             
-            if 'trade_instruction' not in data or 'next_message' not in data:
-                raise ValueError("Invalid JSON structure")
-            
-            trade_instruction = data['trade_instruction']
-            next_msg = data['next_message']
+            # 使用 get 方法获取字段值，如果字段不存在则返回默认值
+            trade_instruction = data.get('trade_instruction', 'hold').lower()
+            next_msg = data.get('next_message', '')
+            trade_reason = data.get('trade_reason', '')
+            trade_plan = data.get('trade_plan', '')
             
             # 解析交易指令和数量
             instruction_parts = trade_instruction.split()
@@ -566,7 +606,8 @@ class LLMDealer:
             quantity = instruction_parts[1] if len(instruction_parts) > 1 else '1'
             
             if action not in ['buy', 'sell', 'short', 'cover', 'hold']:
-                raise ValueError(f"Invalid trade instruction: {action}")
+                self.logger.warning(f"Invalid trade instruction: {action}. Defaulting to 'hold'.")
+                return "hold", 1, next_msg, "", trade_plan
             
             if quantity.lower() == 'all':
                 quantity = 'all'
@@ -576,44 +617,56 @@ class LLMDealer:
                 except ValueError:
                     quantity = 1  # 默认数量为1
             
-            return action, quantity, next_msg
+            return action, quantity, next_msg, trade_reason, trade_plan
+        except json.JSONDecodeError as e:
+            self.logger.error(f"JSON parsing error: {e}")
+            return "hold", 1, "", "JSON 解析错误", ""
         except Exception as e:
-            logging.error(f"Error parsing LLM output: {e}")
-            return "hold", 1, ""
+            self.logger.error(f"Error parsing LLM output: {e}")
+            return "hold", 1, "", "解析错误", ""
 
-    def _execute_trade(self, trade_instruction: str, quantity: Union[int, str], bar: pd.Series):
+    def _execute_trade(self, trade_instruction: str, quantity: Union[int, str], bar: pd.Series, trade_reason: str, trade_plan: str):
         current_datetime = bar['datetime']
         current_date = current_datetime.date()
         current_price = bar['close']
+
+        self.logger.info(f"尝试执行交易: 指令={trade_instruction}, 数量={quantity}, 价格={current_price}")
+        self.logger.info(f"交易理由: {trade_reason}")
+        self.logger.info(f"交易计划: {trade_plan}")
 
         if self.last_trade_date != current_date:
             self._close_all_positions(current_price, current_datetime)
             self.last_trade_date = current_date
 
         if trade_instruction.lower() == 'hold':
-            logging.info("Hold position, no trade executed.")
+            self.logger.info("保持当前仓位，不执行交易。")
             return
 
-        # 修复这里：直接使用传入的 trade_instruction 和 quantity
         action = trade_instruction.lower()
         qty = self.max_position if quantity == 'all' else int(quantity)
 
         current_position = self.position_manager.get_current_position()
 
+        self.logger.info(f"当前仓位: {current_position}, 最大仓位: {self.max_position}")
+
         if action == "buy":
             max_buy = self.max_position - current_position
             actual_quantity = min(qty, max_buy)
-            self.position_manager.open_position(current_price, actual_quantity, True, current_datetime)
+            self.logger.info(f"尝试买入 {actual_quantity} 手")
+            self.position_manager.open_position(current_price, actual_quantity, True, current_datetime, trade_plan)
         elif action == "sell":
             actual_quantity = self.position_manager.close_positions(current_price, qty, True, current_datetime)
+            self.logger.info(f"尝试卖出 {actual_quantity} 手")
         elif action == "short":
             max_short = self.max_position + current_position
             actual_quantity = min(qty, max_short)
-            self.position_manager.open_position(current_price, actual_quantity, False, current_datetime)
+            self.logger.info(f"尝试做空 {actual_quantity} 手")
+            self.position_manager.open_position(current_price, actual_quantity, False, current_datetime, trade_plan)
         elif action == "cover":
             actual_quantity = self.position_manager.close_positions(current_price, qty, False, current_datetime)
+            self.logger.info(f"尝试买入平空 {actual_quantity} 手")
         else:
-            logging.error(f"Unknown trade action: {action}")
+            self.logger.error(f"未知的交易动作: {action}")
             return
 
         self._force_close_if_needed(current_datetime, current_price)
@@ -621,9 +674,9 @@ class LLMDealer:
         profits = self.position_manager.calculate_profits(current_price)
         self.total_profit = profits['total_profit']
 
-        logging.info(f"执行交易后的仓位: {self.position_manager.get_current_position()}")
-        logging.info(f"当前总盈亏: {self.total_profit:.2f}")
-        logging.info(self.position_manager.get_position_details())
+        self.logger.info(f"执行交易后的仓位: {self.position_manager.get_current_position()}")
+        self.logger.info(f"当前总盈亏: {self.total_profit:.2f}")
+        self.logger.info(self.position_manager.get_position_details())
 
     def _close_all_positions(self, current_price: float, current_datetime: pd.Timestamp):
         self.position_manager.close_positions(current_price, float('inf'), True, current_datetime)
@@ -639,32 +692,45 @@ class LLMDealer:
 
         if is_day_session and current_time >= day_closing_time:
             self._close_all_positions(current_price, current_datetime)
-            logging.info("日盘强制平仓")
+            self.logger.info("日盘强制平仓")
         elif is_night_session and self.night_closing_time:
             # Check if it's within 5 minutes of the night closing time
             closing_window_start = (datetime.combine(datetime.min, self.night_closing_time) - timedelta(minutes=5)).time()
             if closing_window_start <= current_time <= self.night_closing_time:
                 self._close_all_positions(current_price, current_datetime)
-                logging.info("夜盘强制平仓")
+                self.logger.info("夜盘强制平仓")
             else:
-                logging.info(f"夜盘交易，当前仓位：{self.position_manager.get_current_position()}")
+                self.logger.info(f"夜盘交易，当前仓位：{self.position_manager.get_current_position()}")
         elif is_night_session and not self.night_closing_time:
-            logging.info(f"夜盘交易（无强制平仓时间），当前仓位：{self.position_manager.get_current_position()}")
+            self.logger.info(f"夜盘交易（无强制平仓时间），当前仓位：{self.position_manager.get_current_position()}")
 
     def _get_today_bar_index(self, timestamp: pd.Timestamp) -> int:
         """
-        计算当前的 bar index，基于今日的分钟 bar 数量
+        Calculate the current bar index based on today's minute bars
         """
         if self.today_minute_bars.empty:
             return 0
         
         try:
-            # 确保 datetime 列是 datetime 类型
-            self.today_minute_bars['datetime'] = pd.to_datetime(self.today_minute_bars['datetime'])
-            today_bars = self.today_minute_bars[self.today_minute_bars['datetime'].dt.date == timestamp.date()]
+            # Convert 'datetime' column to datetime type if it's not already
+            if not pd.api.types.is_datetime64_any_dtype(self.today_minute_bars['datetime']):
+                self.today_minute_bars['datetime'] = pd.to_datetime(self.today_minute_bars['datetime'], utc=True)
+            
+            # Now check if datetimes are timezone-aware
+            if self.today_minute_bars['datetime'].dt.tz is None:
+                # If not timezone-aware, assume they're in local time and make them timezone-aware
+                self.today_minute_bars['datetime'] = self.today_minute_bars['datetime'].dt.tz_localize('Asia/Shanghai')
+            
+            # Convert to UTC
+            self.today_minute_bars['datetime'] = self.today_minute_bars['datetime'].dt.tz_convert('UTC')
+            
+            # Ensure the input timestamp is in UTC
+            utc_timestamp = timestamp.tz_convert('UTC')
+            
+            today_bars = self.today_minute_bars[self.today_minute_bars['datetime'].dt.date == utc_timestamp.date()]
             return len(today_bars)
         except Exception as e:
-            logging.error(f"Error in _get_today_bar_index: {str(e)}", exc_info=True)
+            self.logger.error(f"Error in _get_today_bar_index: {str(e)}", exc_info=True)
             return 0
 
     def _is_trading_time(self, timestamp: pd.Timestamp) -> bool:
@@ -685,26 +751,26 @@ class LLMDealer:
                 return True
         return False
 
-    def _log_bar_info(self, bar: Union[pd.Series, dict], news: str, trade_instruction: str):
+    def _log_bar_info(self, bar: Union[pd.Series, dict], news: str, trade_instruction: str,trade_reason, trade_plan):
         try:
             # Ensure the output directory exists
             os.makedirs('./output', exist_ok=True)
 
             # Create or get the file handler for the current date
             current_date = datetime.now().strftime('%Y%m%d')
-            file_handler = next((h for h in self.logger.handlers if isinstance(h, logging.FileHandler) and h.baseFilename.endswith(f'{current_date}.log')), None)
+            file_handler = next((h for h in self.logger.handlers if isinstance(h, FileHandler) and h.baseFilename.endswith(f'{current_date}.log')), None)
             
             if not file_handler:
                 # If the file handler for the current date doesn't exist, create a new one
                 file_path = f'./output/log{current_date}.log'
-                file_handler = logging.FileHandler(file_path)
+                file_handler = FileHandler(file_path)
                 file_handler.setLevel(logging.DEBUG)
                 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
                 self.logger.addHandler(file_handler)
 
                 # Remove old file handlers
                 for handler in self.logger.handlers[:]:
-                    if isinstance(handler, logging.FileHandler) and not handler.baseFilename.endswith(f'{current_date}.log'):
+                    if isinstance(handler, FileHandler) and not handler.baseFilename.endswith(f'{current_date}.log'):
                         self.logger.removeHandler(handler)
                         handler.close()
 
@@ -719,6 +785,8 @@ class LLMDealer:
             成交量: {bar['volume']}, 持仓量: {bar.get('open_interest', bar.get('hold', 'N/A'))}
             新闻: {news[:200] + '...' if news else '无新闻数据'}
             交易指令: {trade_instruction}
+            交易理由: {trade_reason}
+            交易计划: {trade_plan}
             当前持仓: {self.position_manager.get_current_position()}
             盈亏情况:
             {self.position_manager.calculate_profits(bar['close'])}
@@ -730,20 +798,68 @@ class LLMDealer:
 
             # Log to console only if there's a trade instruction (excluding 'hold')
             if trade_instruction.lower() != 'hold':
-                console_msg = f"时间: {pd.to_datetime(bar['datetime'])}, 价格: {bar['close']:.2f}, 交易指令: {trade_instruction}, 当前持仓: {self.position_manager.get_current_position()}"
+                console_msg = f"时间: {pd.to_datetime(bar['datetime'])}, 价格: {bar['close']:.2f}, 交易指令: {trade_instruction}, 交易理由: {trade_reason[:50]}..., 当前持仓: {self.position_manager.get_current_position()}"
                 self.logger.info(console_msg)
 
         except Exception as e:
             self.logger.error(f"Error in _log_bar_info: {str(e)}", exc_info=True)
-    
+
+    def parse_timestamp(self, timestamp):
+        """解析时间戳"""
+        self.logger.debug(f"Attempting to parse timestamp: {timestamp}")
+        try:
+            # 尝试多种可能的时间戳格式
+            if isinstance(timestamp, (int, float)):
+                # 如果时间戳是以毫秒为单位
+                if timestamp > 1e12:
+                    # 检查时间戳是否超出合理范围（2262年之后）
+                    if timestamp > 9999999999999:
+                        self.logger.warning(f"Abnormally large timestamp detected: {timestamp}")
+                        # 尝试将其解释为纳秒级时间戳
+                        try:
+                            return pd.Timestamp(timestamp, unit='ns').tz_localize(beijing_tz)
+                        except Exception:
+                            self.logger.error(f"Failed to parse abnormally large timestamp: {timestamp}")
+                            return datetime.now(beijing_tz)
+                    return datetime.fromtimestamp(timestamp / 1000, tz=beijing_tz)
+                # 如果时间戳是以秒为单位
+                else:
+                    return datetime.fromtimestamp(timestamp, tz=beijing_tz)
+            elif isinstance(timestamp, str):
+                # 尝试使用dateutil解析字符串格式的时间戳
+                import dateutil.parser as parser
+                return parser.parse(timestamp).astimezone(beijing_tz)
+            elif isinstance(timestamp, pd.Timestamp):
+                return timestamp.tz_localize(beijing_tz) if timestamp.tz is None else timestamp.tz_convert(beijing_tz)
+            elif isinstance(timestamp, datetime):
+                return timestamp.astimezone(beijing_tz) if timestamp.tzinfo else beijing_tz.localize(timestamp)
+            else:
+                raise ValueError(f"Unexpected timestamp type: {type(timestamp)}")
+        except Exception as e:
+            self.logger.error(f"Error parsing timestamp {timestamp}: {str(e)}")
+            # 如果所有方法都失败，返回当前时间作为后备选项
+            self.logger.warning("Using current time as fallback")
+            return datetime.now(beijing_tz)
+
     def process_bar(self, bar: pd.Series, news: str = "") -> Tuple[str, Union[int, str], str]:
         try:
-            bar['datetime'] = pd.to_datetime(bar['datetime'])
+            # 确保使用正确的时间戳键
+            time_key = 'time' if 'time' in bar else 'datetime'
+            bar['datetime'] = self.parse_timestamp(bar[time_key])
             bar_date = bar['datetime'].date()
 
             if self.current_date != bar_date:
                 self.current_date = bar_date
                 self.today_minute_bars = self._get_today_data(bar_date)
+                # Ensure the datetime column is in datetime format and timezone-aware
+                self.today_minute_bars['datetime'] = pd.to_datetime(self.today_minute_bars['datetime'], utc=True)
+                
+                # If the datetimes are not timezone-aware, assume they're in local time and make them timezone-aware
+                if self.today_minute_bars['datetime'].dt.tz is None:
+                    self.today_minute_bars['datetime'] = self.today_minute_bars['datetime'].dt.tz_localize('Asia/Shanghai')
+                
+                # Convert to UTC
+                self.today_minute_bars['datetime'] = self.today_minute_bars['datetime'].dt.tz_convert('UTC')
                 self.position = 0
                 self.last_trade_date = bar_date
                 
@@ -763,11 +879,12 @@ class LLMDealer:
             llm_input = self._prepare_llm_input(bar, self.news_summary if (not self.is_backtest and (news_updated or len(self.today_minute_bars) == 1)) else "")
             
             llm_response = self.llm_client.one_chat(llm_input)
-            trade_instruction, quantity, next_msg = self._parse_llm_output(llm_response)
-            self._execute_trade(trade_instruction, quantity, bar)
-            self._log_bar_info(bar, self.news_summary if news_updated else "", f"{trade_instruction} {quantity}")
+            trade_instruction, quantity, next_msg, trade_reason, trade_plan = self._parse_llm_output(llm_response)
+            self._execute_trade(trade_instruction, quantity, bar, trade_reason, trade_plan)
+            self._log_bar_info(bar, self.news_summary if news_updated else "", f"{trade_instruction} {quantity}", trade_reason, trade_plan)
             self.last_msg = next_msg
-            return trade_instruction, quantity, next_msg
+            return trade_instruction, quantity, next_msg, trade_reason, trade_plan
         except Exception as e:
-            logging.error(f"Error processing bar: {str(e)}")
-            return "hold", 0, ""
+            self.logger.error(f"Error processing bar: {str(e)}", exc_info=True)
+            self.logger.error(f"Problematic bar data: {bar}")
+            return "hold", 0, "", "处理错误", "无交易计划"
